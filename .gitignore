@@ -1,0 +1,23 @@
+# Build output
+artifacts/
+bin/
+obj/
+.vs/
+*.exe
+*.pdb
+*.zip
+*.sha256
+
+# Local and secret material
+.env
+.env.*
+credentials.txt
+*.pfx
+*.p12
+*.snk
+
+# Workspace-only files
+work/
+outputs/
+SwitzerlandVPN.cpu-probe.cs
+SwitzerlandVPN.monitor-probe.cs
