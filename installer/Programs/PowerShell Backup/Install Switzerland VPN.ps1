@@ -10,7 +10,7 @@ Add-Type -AssemblyName System.Windows.Forms
 
 $vpnName = 'Switzerland VPN'
 $ruleGroup = 'Switzerland VPN Kill Switch'
-$installVersion = '1.1.0'
+$installVersion = '1.1.1'
 $installParent = $null
 $installDir = $null
 $validatedInstallTarget = $null
@@ -1004,6 +1004,7 @@ function Get-ValidatedManagedUpgradeContext {
         InstallId = [string]$state.InstallId
         ServerAddress = [string]$state.ServerAddress
         OldVersion = $ExpectedVersion
+        RequiredUpdateHelper = [bool]$RequireUpdateHelper
         SanitizedState = [ordered]@{
             ProductName = $vpnName
             Version = $ExpectedVersion
@@ -1105,7 +1106,9 @@ function Invoke-ManagedInstallUpgrade {
         Set-ProtectedApplicationDirectoryAcl -Path $installDir
         Set-ProtectedApplicationDirectoryAcl -Path $stateDir
 
-        $rechecked = Get-ValidatedManagedUpgradeContext -ExpectedVersion $Context.OldVersion
+        $rechecked = Get-ValidatedManagedUpgradeContext `
+            -ExpectedVersion $Context.OldVersion `
+            -RequireUpdateHelper:$Context.RequiredUpdateHelper
         if (-not [string]::Equals($rechecked.InstallId, $Context.InstallId, [StringComparison]::Ordinal)) {
             throw 'The installed ownership record changed while the upgrade was being prepared.'
         }
@@ -1159,7 +1162,9 @@ function Invoke-ManagedInstallUpgrade {
                 Move-Item -LiteralPath $backupInstall -Destination $installDir
             }
             if (Test-Path -LiteralPath $installDir -PathType Container) {
-                Get-ValidatedManagedUpgradeContext -ExpectedVersion $Context.OldVersion | Out-Null
+                Get-ValidatedManagedUpgradeContext `
+                    -ExpectedVersion $Context.OldVersion `
+                    -RequireUpdateHelper:$Context.RequiredUpdateHelper | Out-Null
             }
             if (Test-Path -LiteralPath $transactionRoot) {
                 Remove-Item -LiteralPath $transactionRoot -Recurse -Force
@@ -1287,7 +1292,18 @@ try {
     $existingFolderIsManaged = Test-Path -LiteralPath $statePath -PathType Leaf
     $managedUpgradeContext = $null
     if ($existingFolderIsManaged) {
-        $managedUpgradeContext = Get-ValidatedManagedUpgradeContext -ExpectedVersion '1.0.9'
+        try {
+            $recordedVersion = [string](Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json).Version
+        }
+        catch {
+            throw 'The existing installation version record is damaged. Nothing was changed.'
+        }
+        if (@('1.0.9', '1.1.0') -cnotcontains $recordedVersion) {
+            throw "The installed version $recordedVersion cannot be upgraded by this package. Nothing was changed."
+        }
+        $managedUpgradeContext = Get-ValidatedManagedUpgradeContext `
+            -ExpectedVersion $recordedVersion `
+            -RequireUpdateHelper:($recordedVersion -eq '1.1.0')
     }
     if ((Test-Path -LiteralPath $installDir) -and -not $existingFolderIsManaged) {
         $items = @(Get-ChildItem -LiteralPath $installDir -Force -ErrorAction SilentlyContinue)
@@ -1325,7 +1341,7 @@ catch {
 
 if ($null -ne $managedUpgradeContext) {
     $answer = [Windows.Forms.MessageBox]::Show(
-        "Upgrade Switzerland VPN from 1.0.9 to $installVersion?`r`n`r`nOnly the app files and protected version records will change. The VPN profile, saved sign-in, certificate, connection, kill switch, firewall rules, and VPN server setting will stay as they are.",
+        "Upgrade Switzerland VPN from $($managedUpgradeContext.OldVersion) to ${installVersion}?`r`n`r`nOnly the app files and protected version records will change. The VPN profile, saved sign-in, certificate, connection, kill switch, firewall rules, and VPN server setting will stay as they are.",
         'Upgrade Switzerland VPN',
         [Windows.Forms.MessageBoxButtons]::YesNo,
         [Windows.Forms.MessageBoxIcon]::Question,
