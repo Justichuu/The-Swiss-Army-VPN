@@ -21,9 +21,9 @@ using System.Windows.Forms;
 [assembly: System.Reflection.AssemblyCompany("Jaye")]
 [assembly: System.Reflection.AssemblyProduct("Switzerland VPN")]
 [assembly: System.Reflection.AssemblyCopyright("Copyright 2026 Jaye")]
-[assembly: System.Reflection.AssemblyVersion("1.1.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.1.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersion("1.1.0.0")]
+[assembly: System.Reflection.AssemblyVersion("1.1.1.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.1.1.0")]
+[assembly: System.Reflection.AssemblyInformationalVersion("1.1.1.0")]
 
 namespace SwitzerlandVpn
 {
@@ -32,7 +32,7 @@ namespace SwitzerlandVpn
         internal const string VpnName = "Switzerland VPN";
         internal const string RuleGroup = "Switzerland VPN Kill Switch";
         internal const string DefaultServer = "ch221.nordvpn.com";
-        internal const string CurrentVersion = "1.1.0";
+        internal const string CurrentVersion = "1.1.1";
         internal const string GitHubRepository = "Justichuu/The-Swiss-Army-VPN";
         internal const string RepositoryUrl = "https://github.com/Justichuu/The-Swiss-Army-VPN";
         internal const string UpdateScriptName = "Update Switzerland VPN.ps1";
