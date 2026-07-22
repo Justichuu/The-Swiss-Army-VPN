@@ -2,7 +2,7 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '1.2.0',
+    [string]$Version = '1.3.0',
 
     [string]$OutputDirectory = ''
 )
@@ -73,6 +73,10 @@ $applicationOutput = Join-Path $outputRoot $applicationName
 
 $sourceCode = Join-Path $sourceDirectory 'SwitzerlandVPN.cs'
 $manifest = Join-Path $sourceDirectory 'SwitzerlandVPN.exe.manifest'
+$installerSourceCode = Join-Path $sourceDirectory 'SwitzerlandVPN.Installer.cs'
+$installerManifest = Join-Path $sourceDirectory 'SwitzerlandVPN.Installer.exe.manifest'
+$unlockSourceCode = Join-Path $sourceDirectory 'SwitzerlandVPN.EmergencyUnlock.cs'
+$unlockManifest = Join-Path $sourceDirectory 'SwitzerlandVPN.EmergencyUnlock.exe.manifest'
 $installerScript = Join-Path $installerDirectory 'Programs\PowerShell Backup\Install Switzerland VPN.ps1'
 $icon = Join-Path $assetDirectory 'Switzerland VPN.ico'
 $background = Join-Path $assetDirectory 'Switzerland VPN Background.png'
@@ -82,6 +86,10 @@ $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 foreach ($requiredFile in @(
     $sourceCode,
     $manifest,
+    $installerSourceCode,
+    $installerManifest,
+    $unlockSourceCode,
+    $unlockManifest,
     $icon,
     $background,
     $iconPng,
@@ -109,6 +117,22 @@ if ($sourceText -notmatch
 if ((Get-Content -LiteralPath $manifest -Raw) -notmatch
     ('assemblyIdentity version="' + [regex]::Escape($expectedAssemblyVersion) + '"')) {
     throw "Application manifest version does not match build version $Version."
+}
+if ((Get-Content -LiteralPath $installerManifest -Raw) -notmatch
+    ('assemblyIdentity version="' + [regex]::Escape($expectedAssemblyVersion) + '"')) {
+    throw "Installer manifest version does not match build version $Version."
+}
+if ((Get-Content -LiteralPath $installerSourceCode -Raw) -notmatch
+    ('AssemblyFileVersion\("' + [regex]::Escape($expectedAssemblyVersion) + '"\)')) {
+    throw "Installer source version does not match build version $Version."
+}
+if ((Get-Content -LiteralPath $unlockManifest -Raw) -notmatch
+    ('assemblyIdentity version="' + [regex]::Escape($expectedAssemblyVersion) + '"')) {
+    throw "Emergency Unlock manifest version does not match build version $Version."
+}
+if ((Get-Content -LiteralPath $unlockSourceCode -Raw) -notmatch
+    ('AssemblyFileVersion\("' + [regex]::Escape($expectedAssemblyVersion) + '"\)')) {
+    throw "Emergency Unlock source version does not match build version $Version."
 }
 if ((Get-Content -LiteralPath $installerScript -Raw) -notmatch
     ('\$installVersion\s*=\s*''' + $escapedVersion + '''')) {
@@ -147,10 +171,56 @@ try {
         throw "C# compilation failed with exit code $LASTEXITCODE."
     }
 
+    $installerExecutable = Join-Path $applicationStage 'Install Switzerland VPN.exe'
+    & $compiler `
+        /nologo `
+        /target:winexe `
+        /optimize+ `
+        /platform:anycpu `
+        /warn:4 `
+        /warnaserror+ `
+        "/win32manifest:$installerManifest" `
+        "/win32icon:$icon" `
+        /reference:System.Windows.Forms.dll `
+        "/out:$installerExecutable" `
+        $installerSourceCode
+    if ($LASTEXITCODE -ne 0) {
+        throw "Installer compilation failed with exit code $LASTEXITCODE."
+    }
+
+    $unlockExecutable = Join-Path $executableDirectory 'Emergency Unlock.exe'
+    & $compiler `
+        /nologo `
+        /target:winexe `
+        /optimize+ `
+        /platform:anycpu `
+        /warn:4 `
+        /warnaserror+ `
+        "/win32manifest:$unlockManifest" `
+        "/win32icon:$icon" `
+        /reference:System.Windows.Forms.dll `
+        "/out:$unlockExecutable" `
+        $unlockSourceCode
+    if ($LASTEXITCODE -ne 0) {
+        throw "Emergency Unlock compilation failed with exit code $LASTEXITCODE."
+    }
+
     $expectedFileVersion = $Version + '.0'
     $versionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($executable)
     if ($versionInfo.FileVersion -ne $expectedFileVersion -or $versionInfo.CompanyName -ne 'Justichuu') {
         throw "Built executable metadata does not match version $expectedFileVersion and publisher Justichuu."
+    }
+    $installerVersionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($installerExecutable)
+    if ($installerVersionInfo.FileVersion -ne $expectedFileVersion -or
+        $installerVersionInfo.CompanyName -ne 'Justichuu' -or
+        $installerVersionInfo.FileDescription -ne 'Switzerland VPN Installer') {
+        throw "Built installer metadata does not match version $expectedFileVersion and publisher Justichuu."
+    }
+    $unlockVersionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($unlockExecutable)
+    if ($unlockVersionInfo.FileVersion -ne $expectedFileVersion -or
+        $unlockVersionInfo.CompanyName -ne 'Justichuu' -or
+        $unlockVersionInfo.FileDescription -ne 'Switzerland VPN Emergency Unlock') {
+        throw "Built Emergency Unlock metadata does not match version $expectedFileVersion and publisher Justichuu."
     }
 
     $programRoot = Join-Path $applicationStage 'Programs'

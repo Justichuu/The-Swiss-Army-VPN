@@ -19,7 +19,7 @@ This project is a learning experience more than anything: an experiment in mixin
 
 1. Download both ZIP files from the latest GitHub Release.
 2. Keep the source ZIP with the application ZIP when sharing it.
-3. Extract the application ZIP and run `Install Switzerland VPN.cmd`.
+3. Extract the application ZIP and run `Install Switzerland VPN.exe`.
 4. Open the widget and choose **SET UP SIGN-IN**.
 
 Credentials are never included. Use valid NordVPN manual-service credentials. Installing or changing protection requires administrator approval.
@@ -28,7 +28,7 @@ Credentials are never included. Use valid NordVPN manual-service credentials. In
 
 The install keeps one Windows VPN profile so credentials and kill-switch ownership stay unambiguous. If its server stops working, disconnect and unlock first, then open **Choose Swiss VPN Server** from the Start menu. It requests administrator approval, fetches NordVPN's current online Swiss IKEv2 list, chooses the lowest-load server that resolves, and updates the managed profile and installation record together. Advanced users can run `Switch Switzerland VPN Server.ps1 -List` to inspect candidates or add `-Server ch123.nordvpn.com` to select one explicitly. `VPN Servers.txt` is a seed pool used only when the live service is unavailable.
 
-The first release containing this feature adds files that older exact-allowlist updaters do not recognize. Install that release once with `Install Switzerland VPN.cmd`; subsequent releases can update the pool normally.
+The first release containing a new package file may require one manual install because older exact-allowlist updaters reject unfamiliar files. Run `Install Switzerland VPN.exe`; subsequent compatible releases can update normally. The `.cmd` launcher remains available only as a troubleshooting fallback.
 
 Private updates require system-wide GitHub CLI 2.96+ and `gh auth login` with an account that can read this repository. The account approving the update must have access too. No GitHub token is stored in the app.
 

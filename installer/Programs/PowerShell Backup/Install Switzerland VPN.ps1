@@ -13,7 +13,7 @@ $ruleGroup = 'Switzerland VPN Kill Switch'
 $publisher = 'Justichuu'
 # The project handle changed because I got bored; accept the old publisher only while upgrading.
 $legacyPublisher = 'Jaye'
-$installVersion = '1.2.0'
+$installVersion = '1.3.0'
 $installParent = $null
 $installDir = $null
 $validatedInstallTarget = $null
@@ -342,6 +342,7 @@ function Assert-ExactInstallPaths {
 
 function Assert-PackageFiles {
     $requiredExecutables = @(
+        'Emergency Unlock.exe'
         'Switzerland VPN.exe'
         'Switzerland VPN.ico'
         'Switzerland VPN.png'
@@ -962,6 +963,9 @@ function Get-ValidatedManagedUpgradeContext {
     if ([version]$ExpectedVersion -ge [version]'1.2.0') {
         $requiredFiles += 'Switch Switzerland VPN Server.ps1', 'VPN Servers.txt'
     }
+    if ([version]$ExpectedVersion -ge [version]'1.3.0') {
+        $requiredFiles += 'Emergency Unlock.exe'
+    }
     if ($RequireUpdateHelper) { $requiredFiles += 'Update Switzerland VPN.ps1' }
     $allowed = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     foreach ($name in $requiredFiles) { [void]$allowed.Add($name) }
@@ -1098,6 +1102,7 @@ function Invoke-ManagedInstallUpgrade {
     $stateChanged = $false
     $registryChanged = $false
     $serverShortcutCreated = $false
+    $emergencyShortcutChanged = $false
     $serverShortcutPath = Join-Path `
         (Join-Path ([Environment]::GetFolderPath('CommonPrograms')) 'Switzerland VPN') `
         'Choose Swiss VPN Server.lnk'
@@ -1110,6 +1115,18 @@ function Invoke-ManagedInstallUpgrade {
         -ExpectedArguments $serverShortcutArguments)) {
         throw "An unmanaged shortcut already exists: $serverShortcutPath"
     }
+    $emergencyShortcutPath = Join-Path `
+        (Join-Path ([Environment]::GetFolderPath('CommonPrograms')) 'Switzerland VPN') `
+        'Emergency Unlock.lnk'
+    $emergencyShortcutBackup = Join-Path $transactionRoot 'Emergency Unlock.lnk'
+    $legacyEmergencyArguments = "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $installDir 'Emergency Unlock.ps1')`""
+    $emergencyShortcutPreexisting = Test-Path -LiteralPath $emergencyShortcutPath -PathType Leaf
+    if ($emergencyShortcutPreexisting -and -not (Test-PackageShortcut `
+        -Path $emergencyShortcutPath `
+        -ExpectedTarget $serverShortcutPowerShell `
+        -ExpectedArguments $legacyEmergencyArguments)) {
+        throw "An unmanaged shortcut already exists: $emergencyShortcutPath"
+    }
 
     try {
         Assert-WidgetIsClosedForUpgrade -AppPath $Context.AppPath
@@ -1119,7 +1136,7 @@ function Invoke-ManagedInstallUpgrade {
         New-Item -ItemType Directory -Path $newInstall | Out-Null
 
         foreach ($name in @(
-            'Switzerland VPN.exe', 'Switzerland VPN.ico', 'Switzerland VPN.png',
+            'Emergency Unlock.exe', 'Switzerland VPN.exe', 'Switzerland VPN.ico', 'Switzerland VPN.png',
             'Switzerland VPN Background.png'
         )) {
             Copy-AndVerifyUpgradeFile -Source (Join-Path $payloadDir $name) -Destination (Join-Path $newInstall $name)
@@ -1146,7 +1163,7 @@ function Invoke-ManagedInstallUpgrade {
 
         $newVersionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $newInstall 'Switzerland VPN.exe'))
         if ($newVersionInfo.CompanyName -ne $publisher -or $newVersionInfo.FileVersion -ne ($installVersion + '.0') -or
-            @(Get-ChildItem -LiteralPath $newInstall -Force).Count -ne 9) {
+            @(Get-ChildItem -LiteralPath $newInstall -Force).Count -ne 10) {
             throw 'The staged upgrade failed its publisher, version, or file-layout check.'
         }
 
@@ -1189,10 +1206,17 @@ function Invoke-ManagedInstallUpgrade {
         }
 
         $upgradedExecutable = Join-Path $installDir 'Switzerland VPN.exe'
+        $upgradedEmergencyUnlock = Join-Path $installDir 'Emergency Unlock.exe'
         New-Shortcut -Path $serverShortcutPath -Target $serverShortcutPowerShell `
             -Arguments $serverShortcutArguments `
             -WorkingDirectory $installDir -IconLocation "$upgradedExecutable,0"
         $serverShortcutCreated = $true
+        if ($emergencyShortcutPreexisting) {
+            Copy-Item -LiteralPath $emergencyShortcutPath -Destination $emergencyShortcutBackup -Force
+        }
+        $emergencyShortcutChanged = $true
+        New-Shortcut -Path $emergencyShortcutPath -Target $upgradedEmergencyUnlock `
+            -Arguments '' -WorkingDirectory $installDir -IconLocation "$upgradedEmergencyUnlock,0"
 
         try { Remove-Item -LiteralPath $transactionRoot -Recurse -Force }
         catch { }
@@ -1207,6 +1231,14 @@ function Invoke-ManagedInstallUpgrade {
         $failure = $_.Exception.Message
         $rollbackFailure = $null
         try {
+            if ($emergencyShortcutChanged) {
+                if ($emergencyShortcutPreexisting -and (Test-Path -LiteralPath $emergencyShortcutBackup -PathType Leaf)) {
+                    Copy-Item -LiteralPath $emergencyShortcutBackup -Destination $emergencyShortcutPath -Force
+                }
+                else {
+                    Remove-Item -LiteralPath $emergencyShortcutPath -Force -ErrorAction SilentlyContinue
+                }
+            }
             if ($serverShortcutCreated -and -not $serverShortcutPreexisting -and
                 (Test-Path -LiteralPath $serverShortcutPath -PathType Leaf)) {
                 Remove-Item -LiteralPath $serverShortcutPath -Force
@@ -1365,12 +1397,12 @@ try {
         catch {
             throw 'The existing installation version record is damaged. Nothing was changed.'
         }
-        if (@('1.0.9', '1.1.0', '1.1.1') -cnotcontains $recordedVersion) {
+        if (@('1.0.9', '1.1.0', '1.1.1', '1.2.0') -cnotcontains $recordedVersion) {
             throw "The installed version $recordedVersion cannot be upgraded by this package. Nothing was changed."
         }
         $managedUpgradeContext = Get-ValidatedManagedUpgradeContext `
             -ExpectedVersion $recordedVersion `
-            -RequireUpdateHelper:($recordedVersion -in @('1.1.0', '1.1.1'))
+            -RequireUpdateHelper:($recordedVersion -in @('1.1.0', '1.1.1', '1.2.0'))
     }
     if ((Test-Path -LiteralPath $installDir) -and -not $existingFolderIsManaged) {
         $items = @(Get-ChildItem -LiteralPath $installDir -Force -ErrorAction SilentlyContinue)
@@ -1556,6 +1588,7 @@ try {
     }
 
     foreach ($name in @(
+        'Emergency Unlock.exe'
         'Switzerland VPN.exe'
         'Switzerland VPN.ico'
         'Switzerland VPN.png'
@@ -1583,12 +1616,12 @@ try {
     $shortcutCreationStarted = $true
     New-Item -ItemType Directory -Path $startFolder -Force | Out-Null
     $exePath = Join-Path $installDir 'Switzerland VPN.exe'
+    $emergencyUnlockPath = Join-Path $installDir 'Emergency Unlock.exe'
     $powershellPath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
     New-Shortcut -Path (Join-Path $desktop 'Switzerland VPN.lnk') -Target $exePath -Arguments '' -WorkingDirectory $installDir -IconLocation "$exePath,0"
     New-Shortcut -Path (Join-Path $startFolder 'Switzerland VPN.lnk') -Target $exePath -Arguments '' -WorkingDirectory $installDir -IconLocation "$exePath,0"
-    New-Shortcut -Path (Join-Path $startFolder 'Emergency Unlock.lnk') -Target $powershellPath `
-        -Arguments "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $installDir 'Emergency Unlock.ps1')`"" `
-        -WorkingDirectory $env:SystemRoot -IconLocation "$exePath,0"
+    New-Shortcut -Path (Join-Path $startFolder 'Emergency Unlock.lnk') -Target $emergencyUnlockPath `
+        -Arguments '' -WorkingDirectory $installDir -IconLocation "$emergencyUnlockPath,0"
     New-Shortcut -Path (Join-Path $startFolder 'Choose Swiss VPN Server.lnk') -Target $powershellPath `
         -Arguments "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $installDir 'Switch Switzerland VPN Server.ps1')`"" `
         -WorkingDirectory $installDir -IconLocation "$exePath,0"

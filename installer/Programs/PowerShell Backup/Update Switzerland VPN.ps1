@@ -47,6 +47,7 @@ $applicationMutexName = 'Global\SwitzerlandVPNWidget-9F71DB12'
 $updaterMutexName = 'Global\SwitzerlandVPNUpdater-5DFB5198'
 $minimumGitHubCliVersion = [version]'2.96.0'
 $managedInstallFiles = @(
+    'Emergency Unlock.exe'
     'Switzerland VPN.exe'
     'Switzerland VPN.ico'
     'Switzerland VPN.png'
@@ -62,12 +63,14 @@ $preservedInstallFiles = @(
     $ownershipFileName
 )
 $allowedPackageEntries = @(
+    'Install Switzerland VPN.exe'
     'Install Switzerland VPN.cmd'
     'Uninstall Switzerland VPN.cmd'
     'VPN Server.txt'
     'VPN Servers.txt'
     'Programs\Package Checksums.txt'
     'Programs\Executables\NordVPN Server Authentication Only.inf'
+    'Programs\Executables\Emergency Unlock.exe'
     'Programs\Executables\Switzerland VPN Background.png'
     'Programs\Executables\Switzerland VPN.exe'
     'Programs\Executables\Switzerland VPN.ico'
@@ -1389,7 +1392,7 @@ function Invoke-SecureElevatedApply {
         $newInstall = Join-Path $transactionRoot 'new-install'
         New-Item -ItemType Directory -Path $newInstall | Out-Null
         foreach ($name in @(
-            'Switzerland VPN.exe', 'Switzerland VPN.ico', 'Switzerland VPN.png',
+            'Emergency Unlock.exe', 'Switzerland VPN.exe', 'Switzerland VPN.ico', 'Switzerland VPN.png',
             'Switzerland VPN Background.png'
         )) {
             Copy-Item -LiteralPath (Join-Path $packageRoot ('Programs\Executables\' + $name)) `
