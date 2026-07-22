@@ -100,7 +100,7 @@ namespace SwitzerlandVpn.EmergencyUnlock
             string packageScript = Path.GetFullPath(Path.Combine(
                 executableDirectory,
                 "..",
-                "PowerShell Backup",
+                "PowershellBackup",
                 "Emergency Unlock.ps1"));
             return new UnlockConfiguration(executableDirectory, packageScript);
         }

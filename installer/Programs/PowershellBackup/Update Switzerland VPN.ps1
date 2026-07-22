@@ -75,15 +75,15 @@ $allowedPackageEntries = @(
     'Programs\Executables\Switzerland VPN.exe'
     'Programs\Executables\Switzerland VPN.ico'
     'Programs\Executables\Switzerland VPN.png'
-    'Programs\PowerShell Backup\Emergency Unlock.ps1'
-    'Programs\PowerShell Backup\Install Switzerland VPN.ps1'
-    'Programs\PowerShell Backup\Switch Switzerland VPN Server.ps1'
-    'Programs\PowerShell Backup\Uninstall Switzerland VPN.ps1'
-    'Programs\PowerShell Backup\Update Switzerland VPN.ps1'
-    'Programs\PowerShell Backup\Manual Backup\Switzerland VPN OFF.ps1'
-    'Programs\PowerShell Backup\Manual Backup\Switzerland VPN ON.ps1'
-    'Programs\PowerShell Backup\Manual Backup\Switzerland VPN.ps1'
-    'Programs\PowerShell Backup\Manual Backup\VPN Profile.txt'
+    'Programs\PowershellBackup\Emergency Unlock.ps1'
+    'Programs\PowershellBackup\Install Switzerland VPN.ps1'
+    'Programs\PowershellBackup\Switch Switzerland VPN Server.ps1'
+    'Programs\PowershellBackup\Uninstall Switzerland VPN.ps1'
+    'Programs\PowershellBackup\Update Switzerland VPN.ps1'
+    'Programs\PowershellBackup\ManualBackup\Switzerland VPN OFF.ps1'
+    'Programs\PowershellBackup\ManualBackup\Switzerland VPN ON.ps1'
+    'Programs\PowershellBackup\ManualBackup\Switzerland VPN.ps1'
+    'Programs\PowershellBackup\ManualBackup\VPN Profile.txt'
 )
 
 function Test-Administrator {
@@ -1402,7 +1402,7 @@ function Invoke-SecureElevatedApply {
             'Uninstall Switzerland VPN.ps1', 'Emergency Unlock.ps1',
             'Switch Switzerland VPN Server.ps1', 'Update Switzerland VPN.ps1'
         )) {
-            Copy-Item -LiteralPath (Join-Path $packageRoot ('Programs\PowerShell Backup\' + $name)) `
+            Copy-Item -LiteralPath (Join-Path $packageRoot ('Programs\PowershellBackup\' + $name)) `
                 -Destination (Join-Path $newInstall $name)
         }
         Copy-Item -LiteralPath (Join-Path $packageRoot 'VPN Servers.txt') `

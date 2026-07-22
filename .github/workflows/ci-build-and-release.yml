@@ -1,4 +1,4 @@
-name: Build and validate
+name: CI Build and Release
 
 on:
   push:
@@ -21,7 +21,7 @@ jobs:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Build and validate release files
+      - name: Build and validate release artifacts
         shell: pwsh
         run: |
           if ($env:GITHUB_REF_TYPE -eq 'tag') {
@@ -51,7 +51,7 @@ jobs:
 
     steps:
       - name: Download validated artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b40e8e0b5a5461e7c # v8
         with:
           name: switzerland-vpn-${{ github.sha }}
           path: artifacts

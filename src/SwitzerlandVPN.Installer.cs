@@ -40,7 +40,7 @@ namespace SwitzerlandVpn.Installer
             InstallerScriptPath = Path.Combine(
                 packageDirectory,
                 "Programs",
-                "PowerShell Backup",
+                "PowershellBackup",
                 "Install Switzerland VPN.ps1");
         }
 

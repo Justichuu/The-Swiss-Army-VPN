@@ -77,7 +77,7 @@ $installerSourceCode = Join-Path $sourceDirectory 'SwitzerlandVPN.Installer.cs'
 $installerManifest = Join-Path $sourceDirectory 'SwitzerlandVPN.Installer.exe.manifest'
 $unlockSourceCode = Join-Path $sourceDirectory 'SwitzerlandVPN.EmergencyUnlock.cs'
 $unlockManifest = Join-Path $sourceDirectory 'SwitzerlandVPN.EmergencyUnlock.exe.manifest'
-$installerScript = Join-Path $installerDirectory 'Programs\PowerShell Backup\Install Switzerland VPN.ps1'
+$installerScript = Join-Path $installerDirectory 'Programs\PowershellBackup\Install Switzerland VPN.ps1'
 $icon = Join-Path $assetDirectory 'Switzerland VPN.ico'
 $background = Join-Path $assetDirectory 'Switzerland VPN Background.png'
 $iconPng = Join-Path $assetDirectory 'Switzerland VPN.png'
@@ -255,7 +255,7 @@ try {
         throw ($parseFailures -join [Environment]::NewLine)
     }
 
-    $installerValidator = Join-Path $applicationStage 'Programs\PowerShell Backup\Install Switzerland VPN.ps1'
+    $installerValidator = Join-Path $applicationStage 'Programs\PowershellBackup\Install Switzerland VPN.ps1'
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installerValidator `
         -ValidatePackageOnly `
         -InstallParentDirectory (Join-Path $env:SystemDrive 'Program Files')

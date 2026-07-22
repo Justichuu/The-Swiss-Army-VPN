@@ -387,14 +387,14 @@ Download and extract "Switzerland VPN Distribution ${installVersion}.zip", then 
     )) {
         $path = Join-Path $powershellBackupDir $name
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-            throw "The package is incomplete. Missing: Programs\PowerShell Backup\$name"
+            throw "The package is incomplete. Missing: Programs\PowershellBackup\$name"
         }
     }
 
     foreach ($name in @('Switzerland VPN.ps1', 'Switzerland VPN ON.ps1', 'Switzerland VPN OFF.ps1', 'VPN Profile.txt')) {
         $path = Join-Path $manualBackupDir $name
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-            throw "The package is incomplete. Missing: Programs\PowerShell Backup\Manual Backup\$name"
+            throw "The package is incomplete. Missing: Programs\PowershellBackup\ManualBackup\$name"
         }
     }
 

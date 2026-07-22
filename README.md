@@ -18,8 +18,8 @@ This project is a learning experience more than anything: an experiment in mixin
 ## Install
 
 1. Open the [latest GitHub Release](https://github.com/Justichuu/The-Swiss-Army-VPN/releases/latest).
-2. Download `Switzerland VPN Distribution 1.3.0.zip`. Do not use the green **Code → Download ZIP** option; that archive contains source code, not the compiled application.
-3. Keep the matching `Switzerland VPN Source 1.3.0.zip` beside it when sharing the application.
+2. Download `Switzerland VPN Distribution <VERSION>.zip`. Do not use the green **Code → Download ZIP** option; that archive contains source code, not the compiled application.
+3. Keep the matching `Switzerland VPN Source <VERSION>.zip` beside it when sharing the application.
 4. Extract the distribution ZIP and run `Install Switzerland VPN.exe`.
 5. Open the widget and choose **SET UP SIGN-IN**.
 
@@ -50,8 +50,6 @@ The kill switch affects the whole computer while armed. The app may disconnect o
 Current builds are unsigned, so Windows SmartScreen may show a warning.
 
 ## Woah
-
-<!-- fixed the fucked up pikachu -->
 
 ```text
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
