@@ -48,9 +48,7 @@ Current builds are unsigned, so Windows SmartScreen may show a warning.
 
 ## Mascot
 
-Pikachu brought sunglasses.
-
-<!-- fixed the fucked up pikachu -->
+fixed the fucked up pikachu — vibe coding and lack of review are the reason for this dumbassery.
 
 ```text
 ⢀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
