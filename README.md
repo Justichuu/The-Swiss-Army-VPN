@@ -2,7 +2,7 @@
 
 A lightweight Windows tray widget for a Switzerland IKEv2 VPN, backed by Windows' built-in VPN client.
 
-This project is an experiment in mixing vibe coding with real technical knowledge. It has already come a long way, and the goal is to keep building apps that work reliably, scale cleanly, and reach users with no known bugs.
+This project is a learning experience more than anything: an experiment in mixing vibe coding with real technical knowledge. It has already come a long way, and the goal is to keep learning how to build apps that work reliably, scale cleanly, and reach users with no known bugs.
 
 ![Switzerland VPN connecting and reporting protected latency](docs/media/vpn-working-demo/vpn-working-demo.gif)
 
