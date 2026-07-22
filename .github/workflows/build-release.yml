@@ -85,19 +85,28 @@ jobs:
 
           # GitHub's release-by-tag endpoint excludes drafts. List drafts and
           # select the one exact tag created above instead.
-          $draftJson = gh api `
-            "repos/$env:GITHUB_REPOSITORY/releases?per_page=100"
-          if ($LASTEXITCODE -ne 0) {
-            throw 'GitHub could not return the draft release for verification.'
+          $draft = $null
+          foreach ($attempt in 1..6) {
+            $draftJson = gh api `
+              "repos/$env:GITHUB_REPOSITORY/releases?per_page=100"
+            if ($LASTEXITCODE -eq 0) {
+              $drafts = @(($draftJson | ConvertFrom-Json) | Where-Object {
+                  $_.draft -and
+                  [string]::Equals($_.tag_name, $env:GITHUB_REF_NAME, [StringComparison]::Ordinal)
+                })
+              if ($drafts.Count -gt 1) {
+                throw "Found more than one draft for tag $env:GITHUB_REF_NAME."
+              }
+              if ($drafts.Count -eq 1) {
+                $draft = $drafts[0]
+                break
+              }
+            }
+            Start-Sleep -Seconds 5
           }
-          $drafts = @(($draftJson | ConvertFrom-Json) | Where-Object {
-              $_.draft -and
-              [string]::Equals($_.tag_name, $env:GITHUB_REF_NAME, [StringComparison]::Ordinal)
-            })
-          if ($drafts.Count -ne 1) {
-            throw "Expected one exact draft release, found $($drafts.Count)."
+          if ($null -eq $draft) {
+            throw 'GitHub did not make the exact draft visible for verification.'
           }
-          $draft = $drafts[0]
           $remoteAssets = @($draft.assets)
           if ($remoteAssets.Count -ne $assetFiles.Count) {
             throw "The draft contains $($remoteAssets.Count) assets; expected $($assetFiles.Count)."
