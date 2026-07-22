@@ -513,9 +513,9 @@ function Get-ManagedSwissProfiles {
             $scopeProfiles = @(Get-VpnConnection -ErrorAction SilentlyContinue)
         }
 
-        foreach ($profile in $scopeProfiles) {
-            $name = [string]$profile.Name
-            $server = [string]$profile.ServerAddress
+        foreach ($vpnProfile in $scopeProfiles) {
+            $name = [string]$vpnProfile.Name
+            $server = [string]$vpnProfile.ServerAddress
             $isCanonicalName = [string]::Equals($name, $vpnName, [StringComparison]::OrdinalIgnoreCase)
             $isSwissNordVpnServer = $server -match '(?i)^ch[0-9]+\.nordvpn\.com$'
             if (-not $isCanonicalName -and -not $isSwissNordVpnServer) { continue }
@@ -533,9 +533,9 @@ function Get-ManagedSwissProfiles {
 }
 
 function Format-VpnProfileList([object[]]$Profiles) {
-    $lines = foreach ($profile in $Profiles) {
-        $server = if ([string]::IsNullOrWhiteSpace($profile.ServerAddress)) { '<none>' } else { $profile.ServerAddress }
-        "- Scope: $($profile.Scope)`r`n  Name: $($profile.Name)`r`n  Server: $server"
+    $lines = foreach ($vpnProfile in $Profiles) {
+        $server = if ([string]::IsNullOrWhiteSpace($vpnProfile.ServerAddress)) { '<none>' } else { $vpnProfile.ServerAddress }
+        "- Scope: $($vpnProfile.Scope)`r`n  Name: $($vpnProfile.Name)`r`n  Server: $server"
     }
     return ($lines -join "`r`n")
 }
@@ -581,27 +581,27 @@ function Remove-ApprovedVpnProfiles([object[]]$Profiles) {
         & "$env:SystemRoot\System32\rasdial.exe" $name /disconnect 2>&1 | Out-Null
     }
 
-    foreach ($profile in $Profiles) {
-        $current = Get-ExactVpnProfile -Name $profile.Name -AllUser $profile.AllUser
+    foreach ($vpnProfile in $Profiles) {
+        $current = Get-ExactVpnProfile -Name $vpnProfile.Name -AllUser $vpnProfile.AllUser
         if (-not $current) { continue }
 
         if (-not [string]::Equals(
             [string]$current.ServerAddress,
-            [string]$profile.ServerAddress,
+            [string]$vpnProfile.ServerAddress,
             [StringComparison]::OrdinalIgnoreCase
         )) {
-            throw "VPN profile '$($profile.Name)' changed after the removal list was approved. Nothing else was removed."
+            throw "VPN profile '$($vpnProfile.Name)' changed after the removal list was approved. Nothing else was removed."
         }
 
-        if ($profile.AllUser) {
-            Remove-VpnConnection -Name $profile.Name -AllUserConnection -Force
+        if ($vpnProfile.AllUser) {
+            Remove-VpnConnection -Name $vpnProfile.Name -AllUserConnection -Force
         }
         else {
-            Remove-VpnConnection -Name $profile.Name -Force
+            Remove-VpnConnection -Name $vpnProfile.Name -Force
         }
 
-        if (Get-ExactVpnProfile -Name $profile.Name -AllUser $profile.AllUser) {
-            throw "Windows did not remove the approved VPN profile '$($profile.Name)' from $($profile.Scope)."
+        if (Get-ExactVpnProfile -Name $vpnProfile.Name -AllUser $vpnProfile.AllUser) {
+            throw "Windows did not remove the approved VPN profile '$($vpnProfile.Name)' from $($vpnProfile.Scope)."
         }
     }
 }
@@ -1038,14 +1038,14 @@ function Get-ValidatedManagedUpgradeContext {
     }
     $replacedProfiles = @()
     if ($state.PSObject.Properties.Name -contains 'ReplacedProfiles') {
-        foreach ($profile in @($state.ReplacedProfiles)) {
-            if ($null -eq $profile -or
-                $profile.PSObject.Properties.Name -notcontains 'Scope' -or
-                $profile.PSObject.Properties.Name -notcontains 'Name' -or
-                $profile.PSObject.Properties.Name -notcontains 'ServerAddress' -or
-                @('Current user', 'All users') -cnotcontains [string]$profile.Scope -or
-                [string]::IsNullOrWhiteSpace([string]$profile.Name) -or
-                [string]$profile.ServerAddress -notmatch '(?i)^ch[0-9]+\.nordvpn\.com$') {
+        foreach ($replacedProfile in @($state.ReplacedProfiles)) {
+            if ($null -eq $replacedProfile -or
+                $replacedProfile.PSObject.Properties.Name -notcontains 'Scope' -or
+                $replacedProfile.PSObject.Properties.Name -notcontains 'Name' -or
+                $replacedProfile.PSObject.Properties.Name -notcontains 'ServerAddress' -or
+                @('Current user', 'All users') -cnotcontains [string]$replacedProfile.Scope -or
+                [string]::IsNullOrWhiteSpace([string]$replacedProfile.Name) -or
+                [string]$replacedProfile.ServerAddress -notmatch '(?i)^ch[0-9]+\.nordvpn\.com$') {
                 throw 'The existing replaced-profile record is invalid. Nothing was changed.'
             }
             $replacedProfiles += [ordered]@{
@@ -1567,14 +1567,14 @@ try {
 
     Set-ProfileIpv6Disabled
 
-    $profile = Get-VpnConnection -Name $vpnName -AllUserConnection -ErrorAction Stop
-    if ($profile.ServerAddress -ne $serverAddress -or
-        $profile.TunnelType -ne 'Ikev2' -or
-        $profile.EncryptionLevel -ne 'Required' -or
-        $profile.SplitTunneling -ne $false -or
-        $profile.RememberCredential -ne $true -or
-        $profile.IdleDisconnectSeconds -ne 0 -or
-        $profile.AuthenticationMethod -notcontains 'Eap') {
+    $connectionProfile = Get-VpnConnection -Name $vpnName -AllUserConnection -ErrorAction Stop
+    if ($connectionProfile.ServerAddress -ne $serverAddress -or
+        $connectionProfile.TunnelType -ne 'Ikev2' -or
+        $connectionProfile.EncryptionLevel -ne 'Required' -or
+        $connectionProfile.SplitTunneling -ne $false -or
+        $connectionProfile.RememberCredential -ne $true -or
+        $connectionProfile.IdleDisconnectSeconds -ne 0 -or
+        $connectionProfile.AuthenticationMethod -notcontains 'Eap') {
         throw 'The installed Windows VPN profile failed verification.'
     }
 
