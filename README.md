@@ -23,6 +23,9 @@ This project is a learning experience more than anything: an experiment in mixin
 4. Extract the distribution ZIP and run `Install Switzerland VPN.exe`.
 5. Open the widget and choose **SET UP SIGN-IN**.
 
+Release engineering incidents and their corrective actions are documented in
+[`docs/incidents`](docs/incidents/).
+
 Credentials are never included. Use valid NordVPN manual-service credentials. Installing or changing protection requires administrator approval.
 
 ## Backup Swiss servers
