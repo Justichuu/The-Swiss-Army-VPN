@@ -13,7 +13,7 @@ $ruleGroup = 'Switzerland VPN Kill Switch'
 $publisher = 'Justichuu'
 # The project handle changed because I got bored; accept the old publisher only while upgrading.
 $legacyPublisher = 'Jaye'
-$installVersion = '1.3.1'
+$installVersion = '1.3.2'
 $installParent = $null
 $installDir = $null
 $validatedInstallTarget = $null
@@ -1049,9 +1049,9 @@ function Get-ValidatedManagedUpgradeContext {
                 throw 'The existing replaced-profile record is invalid. Nothing was changed.'
             }
             $replacedProfiles += [ordered]@{
-                Scope = [string]$profile.Scope
-                Name = [string]$profile.Name
-                ServerAddress = [string]$profile.ServerAddress
+                Scope = [string]$replacedProfile.Scope
+                Name = [string]$replacedProfile.Name
+                ServerAddress = [string]$replacedProfile.ServerAddress
             }
         }
     }
@@ -1419,12 +1419,12 @@ try {
         catch {
             throw 'The existing installation version record is damaged. Nothing was changed.'
         }
-        if (@('1.0.9', '1.1.0', '1.1.1', '1.1.2', '1.2.0') -cnotcontains $recordedVersion) {
+        if (@('1.0.9', '1.1.0', '1.1.1', '1.1.2', '1.2.0', '1.3.0', '1.3.1') -cnotcontains $recordedVersion) {
             throw "The installed version $recordedVersion cannot be upgraded by this package. Nothing was changed."
         }
         $managedUpgradeContext = Get-ValidatedManagedUpgradeContext `
             -ExpectedVersion $recordedVersion `
-            -RequireUpdateHelper:($recordedVersion -in @('1.1.0', '1.1.1', '1.1.2', '1.2.0'))
+            -RequireUpdateHelper:($recordedVersion -in @('1.1.0', '1.1.1', '1.1.2', '1.2.0', '1.3.0', '1.3.1'))
     }
     if ((Test-Path -LiteralPath $installDir) -and -not $existingFolderIsManaged) {
         $items = @(Get-ChildItem -LiteralPath $installDir -Force -ErrorAction SilentlyContinue)
