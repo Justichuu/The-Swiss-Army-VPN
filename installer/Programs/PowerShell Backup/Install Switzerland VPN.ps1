@@ -350,6 +350,28 @@ function Assert-PackageFiles {
         'NordVPN Server Authentication Only.inf'
     )
 
+    $missingExecutables = @(
+        $requiredExecutables | Where-Object {
+            -not (Test-Path -LiteralPath (Join-Path $payloadDir $_) -PathType Leaf)
+        }
+    )
+    if ($missingExecutables.Count -gt 0) {
+        $sourceRoot = Split-Path -Parent $packageRoot
+        $sourceBuildScript = Join-Path $sourceRoot 'scripts\Build-Release.ps1'
+        $sourceApplication = Join-Path $sourceRoot 'src\SwitzerlandVPN.cs'
+        if ((Test-Path -LiteralPath $sourceBuildScript -PathType Leaf) -and
+            (Test-Path -LiteralPath $sourceApplication -PathType Leaf)) {
+            throw @"
+This is GitHub's source-code ZIP, not the installable application package.
+
+Open:
+https://github.com/Justichuu/The-Swiss-Army-VPN/releases/latest
+
+Download and extract "Switzerland VPN Distribution ${installVersion}.zip", then run "Install Switzerland VPN.exe". Do not use GitHub's green Code > Download ZIP option.
+"@
+        }
+    }
+
     foreach ($name in $requiredExecutables) {
         $path = Join-Path $payloadDir $name
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {

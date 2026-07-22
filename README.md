@@ -17,10 +17,11 @@ This project is a learning experience more than anything: an experiment in mixin
 
 ## Install
 
-1. Download both ZIP files from the latest GitHub Release.
-2. Keep the source ZIP with the application ZIP when sharing it.
-3. Extract the application ZIP and run `Install Switzerland VPN.exe`.
-4. Open the widget and choose **SET UP SIGN-IN**.
+1. Open the [latest GitHub Release](https://github.com/Justichuu/The-Swiss-Army-VPN/releases/latest).
+2. Download `Switzerland VPN Distribution 1.3.0.zip`. Do not use the green **Code → Download ZIP** option; that archive contains source code, not the compiled application.
+3. Keep the matching `Switzerland VPN Source 1.3.0.zip` beside it when sharing the application.
+4. Extract the distribution ZIP and run `Install Switzerland VPN.exe`.
+5. Open the widget and choose **SET UP SIGN-IN**.
 
 Credentials are never included. Use valid NordVPN manual-service credentials. Installing or changing protection requires administrator approval.
 
