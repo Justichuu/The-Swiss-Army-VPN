@@ -2,7 +2,7 @@
 
 A lightweight Windows tray widget for a Switzerland IKEv2 VPN, backed by Windows' built-in VPN client.
 
-![Switzerland VPN widget](docs/widget.png)
+![Switzerland VPN connecting and reporting protected latency](docs/media/vpn-working-demo/vpn-working-demo.gif)
 
 ## What it does
 

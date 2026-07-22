@@ -73,6 +73,11 @@ namespace SwitzerlandVpn
         internal bool KillSwitchIncomplete;
         internal bool FirewallProtectionOff;
         internal bool ManagedRulesPresent;
+        internal WidgetDisplayState? PreviewDisplayState;
+        internal bool PreviewTelemetryAvailable;
+        internal long PreviewLatencyMilliseconds;
+        internal double PreviewDownloadMbps;
+        internal double PreviewUploadMbps;
         internal string Error;
     }
 
@@ -4058,7 +4063,7 @@ namespace SwitzerlandVpn
                 ResetActionLabels();
                 bool unavailable = !string.IsNullOrEmpty(state.Error);
                 ApplyControlState(unavailable ? null : state);
-                ApplyDisplayState(GetDisplayState(state), state);
+                ApplyDisplayState(state.PreviewDisplayState ?? GetDisplayState(state), state);
                 ApplyPreviewTelemetry(state);
             }
             catch
@@ -4696,7 +4701,11 @@ namespace SwitzerlandVpn
             bool protectedState = state != null && state.Connected && state.KillSwitchActive &&
                 !state.KillSwitchIncomplete && !state.FirewallProtectionOff;
             SetTelemetryDisplay(
-                protectedState
+                protectedState && state.PreviewTelemetryAvailable
+                    ? "PROTECTED | LATENCY " + state.PreviewLatencyMilliseconds.ToString(CultureInfo.InvariantCulture) +
+                      " ms | D " + state.PreviewDownloadMbps.ToString("0.0", CultureInfo.InvariantCulture) +
+                      " / U " + state.PreviewUploadMbps.ToString("0.0", CultureInfo.InvariantCulture) + " Mbps"
+                    : protectedState
                     ? "PROTECTED | LATENCY -- | D -- / U -- Mbps"
                     : "NOT PROTECTED | LATENCY OFF | D -- / U -- Mbps",
                 protectedState
@@ -5388,7 +5397,11 @@ namespace SwitzerlandVpn
             switch (name.ToLowerInvariant())
             {
                 case "disconnected": return new WidgetState();
+                case "connecting": return new WidgetState { PreviewDisplayState = WidgetDisplayState.Connecting };
                 case "protected": return new WidgetState { Connected = true, KillSwitchActive = true };
+                case "working": return CreateWorkingPreview(24, 84.6, 18.2);
+                case "working2": return CreateWorkingPreview(22, 86.1, 17.9);
+                case "working3": return CreateWorkingPreview(25, 83.8, 18.4);
                 case "unprotected": return new WidgetState { Connected = true };
                 case "blocked": return new WidgetState { KillSwitchActive = true };
                 case "incomplete": return new WidgetState { KillSwitchIncomplete = true };
@@ -5402,6 +5415,23 @@ namespace SwitzerlandVpn
                 case "error": return new WidgetState { Error = "Windows could not read the VPN or firewall status." };
                 default: throw new ArgumentException("Unknown preview state: " + name);
             }
+        }
+
+        /// <summary>
+        /// Creates a protected documentation-preview state with representative live-monitor values.
+        /// These values are visual examples only and never enter the live monitoring path.
+        /// </summary>
+        private static WidgetState CreateWorkingPreview(long latencyMilliseconds, double downloadMbps, double uploadMbps)
+        {
+            return new WidgetState
+            {
+                Connected = true,
+                KillSwitchActive = true,
+                PreviewTelemetryAvailable = true,
+                PreviewLatencyMilliseconds = latencyMilliseconds,
+                PreviewDownloadMbps = downloadMbps,
+                PreviewUploadMbps = uploadMbps
+            };
         }
 
     }

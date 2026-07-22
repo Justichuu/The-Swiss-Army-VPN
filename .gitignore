@@ -7,6 +7,7 @@ obj/
 *.pdb
 *.zip
 *.sha256
+desktop.ini
 
 # Local and secret material
 .env
