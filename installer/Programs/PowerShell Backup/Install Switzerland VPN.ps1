@@ -10,7 +10,7 @@ Add-Type -AssemblyName System.Windows.Forms
 
 $vpnName = 'Switzerland VPN'
 $ruleGroup = 'Switzerland VPN Kill Switch'
-$installVersion = '1.1.2'
+$installVersion = '1.2.0'
 $installParent = $null
 $installDir = $null
 $validatedInstallTarget = $null
@@ -24,6 +24,7 @@ $payloadDir = Join-Path $programsDir 'Executables'
 $powershellBackupDir = $PSScriptRoot
 $manualBackupDir = Join-Path $powershellBackupDir 'Manual Backup'
 $serverFile = Join-Path $packageRoot 'VPN Server.txt'
+$serverPoolFile = Join-Path $packageRoot 'VPN Servers.txt'
 $checksumFile = Join-Path $programsDir 'Package Checksums.txt'
 $certUrl = 'https://downloads.nordcdn.com/certificates/root.der'
 $certSha256 = '8B5A495DB498A6C2C8CA7AF6AE4A5CDF65E689D06CBECCB02453C91C3191E2FF'
@@ -371,7 +372,7 @@ function Assert-PackageFiles {
         }
     }
 
-    foreach ($path in $serverFile, $checksumFile) {
+    foreach ($path in $serverFile, $serverPoolFile, $checksumFile) {
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
             throw "The package is incomplete. Missing: $(Split-Path -Leaf $path)"
         }
@@ -445,6 +446,25 @@ function Get-ValidatedServer {
         throw "Could not resolve $server to an IPv4 address."
     }
     return $server
+}
+
+function Assert-ValidatedServerPool {
+    $servers = @(
+        Get-Content -LiteralPath $serverPoolFile |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { $_ -and -not $_.StartsWith('#') }
+    )
+    if ($servers.Count -lt 2) {
+        throw 'VPN Servers.txt must contain at least two Swiss backup servers.'
+    }
+    foreach ($server in $servers) {
+        if ($server -cnotmatch '^ch[0-9]+\.nordvpn\.com$') {
+            throw "VPN Servers.txt contains an invalid Swiss NordVPN hostname: $server"
+        }
+    }
+    if (@($servers | Sort-Object -Unique).Count -ne $servers.Count) {
+        throw 'VPN Servers.txt contains duplicate server hostnames.'
+    }
 }
 
 function Get-ManagedSwissProfiles {
@@ -931,6 +951,9 @@ function Get-ValidatedManagedUpgradeContext {
         'VPN Server.txt'
         $ownershipFileName
     )
+    if ([version]$ExpectedVersion -ge [version]'1.2.0') {
+        $requiredFiles += 'Switch Switzerland VPN Server.ps1', 'VPN Servers.txt'
+    }
     if ($RequireUpdateHelper) { $requiredFiles += 'Update Switzerland VPN.ps1' }
     $allowed = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     foreach ($name in $requiredFiles) { [void]$allowed.Add($name) }
@@ -1063,6 +1086,19 @@ function Invoke-ManagedInstallUpgrade {
     $backupMoved = $false
     $stateChanged = $false
     $registryChanged = $false
+    $serverShortcutCreated = $false
+    $serverShortcutPath = Join-Path `
+        (Join-Path ([Environment]::GetFolderPath('CommonPrograms')) 'Switzerland VPN') `
+        'Choose Swiss VPN Server.lnk'
+    $serverShortcutPowerShell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+    $serverShortcutArguments = "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $installDir 'Switch Switzerland VPN Server.ps1')`""
+    $serverShortcutPreexisting = Test-Path -LiteralPath $serverShortcutPath -PathType Leaf
+    if ($serverShortcutPreexisting -and -not (Test-PackageShortcut `
+        -Path $serverShortcutPath `
+        -ExpectedTarget $serverShortcutPowerShell `
+        -ExpectedArguments $serverShortcutArguments)) {
+        throw "An unmanaged shortcut already exists: $serverShortcutPath"
+    }
 
     try {
         Assert-WidgetIsClosedForUpgrade -AppPath $Context.AppPath
@@ -1077,11 +1113,12 @@ function Invoke-ManagedInstallUpgrade {
         )) {
             Copy-AndVerifyUpgradeFile -Source (Join-Path $payloadDir $name) -Destination (Join-Path $newInstall $name)
         }
-        foreach ($name in @('Update Switzerland VPN.ps1', 'Uninstall Switzerland VPN.ps1', 'Emergency Unlock.ps1')) {
+        foreach ($name in @('Update Switzerland VPN.ps1', 'Uninstall Switzerland VPN.ps1', 'Emergency Unlock.ps1', 'Switch Switzerland VPN Server.ps1')) {
             Copy-AndVerifyUpgradeFile -Source (Join-Path $powershellBackupDir $name) -Destination (Join-Path $newInstall $name)
         }
         Copy-AndVerifyUpgradeFile -Source (Join-Path $installDir 'VPN Server.txt') `
             -Destination (Join-Path $newInstall 'VPN Server.txt')
+        Copy-AndVerifyUpgradeFile -Source $serverPoolFile -Destination (Join-Path $newInstall 'VPN Servers.txt')
 
         $updatedMarker = [ordered]@{
             ProductName = $vpnName
@@ -1134,6 +1171,12 @@ function Invoke-ManagedInstallUpgrade {
             throw 'The upgraded installation failed its final ownership check.'
         }
 
+        $upgradedExecutable = Join-Path $installDir 'Switzerland VPN.exe'
+        New-Shortcut -Path $serverShortcutPath -Target $serverShortcutPowerShell `
+            -Arguments $serverShortcutArguments `
+            -WorkingDirectory $installDir -IconLocation "$upgradedExecutable,0"
+        $serverShortcutCreated = $true
+
         try { Remove-Item -LiteralPath $transactionRoot -Recurse -Force }
         catch { }
         try {
@@ -1147,6 +1190,10 @@ function Invoke-ManagedInstallUpgrade {
         $failure = $_.Exception.Message
         $rollbackFailure = $null
         try {
+            if ($serverShortcutCreated -and -not $serverShortcutPreexisting -and
+                (Test-Path -LiteralPath $serverShortcutPath -PathType Leaf)) {
+                Remove-Item -LiteralPath $serverShortcutPath -Force
+            }
             if ($registryChanged) {
                 New-ItemProperty -LiteralPath $uninstallKey -Name DisplayVersion -Value $oldRegistryVersion `
                     -PropertyType String -Force | Out-Null
@@ -1210,6 +1257,7 @@ try {
     Assert-ExactInstallPaths
     Assert-PackageFiles
     Assert-PackageChecksums
+    Assert-ValidatedServerPool
     $serverAddress = if ($ValidatePackageOnly -or -not (Test-Path -LiteralPath $statePath -PathType Leaf)) {
         Get-ValidatedServer
     }
@@ -1496,10 +1544,11 @@ try {
     )) {
         Copy-Item -LiteralPath (Join-Path $payloadDir $name) -Destination (Join-Path $installDir $name) -Force
     }
-    foreach ($name in @('Update Switzerland VPN.ps1', 'Uninstall Switzerland VPN.ps1', 'Emergency Unlock.ps1')) {
+    foreach ($name in @('Update Switzerland VPN.ps1', 'Uninstall Switzerland VPN.ps1', 'Emergency Unlock.ps1', 'Switch Switzerland VPN Server.ps1')) {
         Copy-Item -LiteralPath (Join-Path $powershellBackupDir $name) -Destination (Join-Path $installDir $name) -Force
     }
     [IO.File]::WriteAllText((Join-Path $installDir 'VPN Server.txt'), $serverAddress + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
+    Copy-Item -LiteralPath $serverPoolFile -Destination (Join-Path $installDir 'VPN Servers.txt') -Force
 
     $ownership = [ordered]@{
         ProductName = $vpnName
@@ -1521,6 +1570,9 @@ try {
     New-Shortcut -Path (Join-Path $startFolder 'Emergency Unlock.lnk') -Target $powershellPath `
         -Arguments "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $installDir 'Emergency Unlock.ps1')`"" `
         -WorkingDirectory $env:SystemRoot -IconLocation "$exePath,0"
+    New-Shortcut -Path (Join-Path $startFolder 'Choose Swiss VPN Server.lnk') -Target $powershellPath `
+        -Arguments "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $installDir 'Switch Switzerland VPN Server.ps1')`"" `
+        -WorkingDirectory $installDir -IconLocation "$exePath,0"
     New-Shortcut -Path (Join-Path $startFolder 'Uninstall Switzerland VPN.lnk') -Target $powershellPath `
         -Arguments "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $installDir 'Uninstall Switzerland VPN.ps1')`"" `
         -WorkingDirectory $env:SystemRoot -IconLocation "$exePath,0"

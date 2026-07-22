@@ -314,6 +314,11 @@ function Remove-VerifiedShortcutSet {
             Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $installDir 'Emergency Unlock.ps1')`""
         }
         [pscustomobject]@{
+            Path = Join-Path $startFolder 'Choose Swiss VPN Server.lnk'
+            Target = $powershellPath
+            Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $installDir 'Switch Switzerland VPN Server.ps1')`""
+        }
+        [pscustomobject]@{
             Path = Join-Path $startFolder 'Uninstall Switzerland VPN.lnk'
             Target = $powershellPath
             Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $installDir 'Uninstall Switzerland VPN.ps1')`""

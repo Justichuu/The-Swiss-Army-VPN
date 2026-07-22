@@ -50,7 +50,9 @@ $managedInstallFiles = @(
     'Switzerland VPN Background.png'
     'Uninstall Switzerland VPN.ps1'
     'Emergency Unlock.ps1'
+    'Switch Switzerland VPN Server.ps1'
     'Update Switzerland VPN.ps1'
+    'VPN Servers.txt'
 )
 $preservedInstallFiles = @(
     'VPN Server.txt'
@@ -60,6 +62,7 @@ $allowedPackageEntries = @(
     'Install Switzerland VPN.cmd'
     'Uninstall Switzerland VPN.cmd'
     'VPN Server.txt'
+    'VPN Servers.txt'
     'Programs\Package Checksums.txt'
     'Programs\Executables\NordVPN Server Authentication Only.inf'
     'Programs\Executables\Switzerland VPN Background.png'
@@ -68,6 +71,7 @@ $allowedPackageEntries = @(
     'Programs\Executables\Switzerland VPN.png'
     'Programs\PowerShell Backup\Emergency Unlock.ps1'
     'Programs\PowerShell Backup\Install Switzerland VPN.ps1'
+    'Programs\PowerShell Backup\Switch Switzerland VPN Server.ps1'
     'Programs\PowerShell Backup\Uninstall Switzerland VPN.ps1'
     'Programs\PowerShell Backup\Update Switzerland VPN.ps1'
     'Programs\PowerShell Backup\Manual Backup\Switzerland VPN OFF.ps1'
@@ -1384,11 +1388,14 @@ function Invoke-SecureElevatedApply {
                 -Destination (Join-Path $newInstall $name)
         }
         foreach ($name in @(
-            'Uninstall Switzerland VPN.ps1', 'Emergency Unlock.ps1', 'Update Switzerland VPN.ps1'
+            'Uninstall Switzerland VPN.ps1', 'Emergency Unlock.ps1',
+            'Switch Switzerland VPN Server.ps1', 'Update Switzerland VPN.ps1'
         )) {
             Copy-Item -LiteralPath (Join-Path $packageRoot ('Programs\PowerShell Backup\' + $name)) `
                 -Destination (Join-Path $newInstall $name)
         }
+        Copy-Item -LiteralPath (Join-Path $packageRoot 'VPN Servers.txt') `
+            -Destination (Join-Path $newInstall 'VPN Servers.txt')
         Write-JsonFile -Path (Join-Path $newInstall $ownershipFileName) `
             -Value (New-UpdatedObject -Source $context.Marker -Version $ExpectedVersion)
         $updatedState = New-UpdatedObject -Source $context.State -Version $ExpectedVersion
