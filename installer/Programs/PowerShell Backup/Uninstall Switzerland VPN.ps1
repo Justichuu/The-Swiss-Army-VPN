@@ -142,14 +142,14 @@ function Get-ValidatedOwnershipMarker {
 
 function Get-ValidatedInstallState {
     if (-not (Test-Path -LiteralPath $statePath -PathType Leaf)) {
-        throw 'The installation ownership record is missing. Nothing was removed. Use Emergency Unlock if internet is blocked, then ask Jaye for help repairing or removing the app.'
+        throw 'The installation ownership record is missing. Nothing was removed. Use Emergency Unlock if internet is blocked, then ask Justichuu for help repairing or removing the app.'
     }
 
     try {
         $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
     }
     catch {
-        throw 'The installation ownership record is damaged. Nothing was removed. Use Emergency Unlock if internet is blocked, then ask Jaye for help.'
+        throw 'The installation ownership record is damaged. Nothing was removed. Use Emergency Unlock if internet is blocked, then ask Justichuu for help.'
     }
 
     $requiredProperties = @(

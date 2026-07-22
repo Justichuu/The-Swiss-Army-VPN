@@ -32,6 +32,9 @@ Add-Type -AssemblyName System.Windows.Forms
 
 $productName = 'Switzerland VPN'
 $repository = 'Justichuu/The-Swiss-Army-VPN'
+$publisher = 'Justichuu'
+# The project handle changed because I got bored; accept the old publisher only for safe upgrades.
+$legacyPublisher = 'Jaye'
 $stateDir = Join-Path $env:ProgramData $productName
 $statePath = Join-Path $stateDir 'install-state.json'
 $journalPath = Join-Path $stateDir 'update-journal.json'
@@ -84,6 +87,11 @@ function Test-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = [Security.Principal.WindowsPrincipal]::new($identity)
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Test-SupportedPublisher([string]$Value) {
+    return [string]::Equals($Value, $publisher, [StringComparison]::Ordinal) -or
+        [string]::Equals($Value, $legacyPublisher, [StringComparison]::Ordinal)
 }
 
 function Get-ExactFullPath {
@@ -315,7 +323,7 @@ function Read-UpdateJournal {
         }
         catch { }
     }
-    throw 'An unreadable update recovery journal exists. Ask Jaye before updating again.'
+    throw 'An unreadable update recovery journal exists. Ask Justichuu before updating again.'
 }
 
 function Get-ValidatedTransactionId {
@@ -500,7 +508,7 @@ function Get-ValidatedInstallContext {
         throw 'The installed Switzerland VPN program is missing.'
     }
     $versionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($appPath)
-    if ($versionInfo.CompanyName -ne 'Jaye' -or
+    if (-not (Test-SupportedPublisher ([string]$versionInfo.CompanyName)) -or
         $versionInfo.FileVersion -ne (([string]$state.Version) + '.0')) {
         throw 'The installed program version does not match its ownership data. Reinstall before updating.'
     }
@@ -827,7 +835,7 @@ function Assert-PackageManifest {
 
     $newExe = Join-Path $PackageRoot 'Programs\Executables\Switzerland VPN.exe'
     $versionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($newExe)
-    if ($versionInfo.CompanyName -ne 'Jaye' -or $versionInfo.FileVersion -ne ($Version + '.0')) {
+    if ($versionInfo.CompanyName -ne $publisher -or $versionInfo.FileVersion -ne ($Version + '.0')) {
         throw 'The update executable has the wrong publisher or version.'
     }
 }
@@ -1141,7 +1149,7 @@ function Restore-IncompleteUpdate {
         'FromVersion', 'ToVersion', 'RegistryVersionExisted', 'OldRegistryVersion'
     )) {
         if ($journal.PSObject.Properties.Name -notcontains $propertyName) {
-            throw 'The update recovery journal is incomplete. Ask Jaye before updating again.'
+            throw 'The update recovery journal is incomplete. Ask Justichuu before updating again.'
         }
     }
     if ([string]$journal.FromVersion -notmatch '^\d+\.\d+\.\d+$' -or
@@ -1198,7 +1206,7 @@ function Restore-IncompleteUpdate {
     }
 
     if (-not (Test-Path -LiteralPath $backupDirectory -PathType Container)) {
-        throw 'An interrupted update has no complete rollback folder. Ask Jaye before updating again.'
+        throw 'An interrupted update has no complete rollback folder. Ask Justichuu before updating again.'
     }
     Assert-BackupMatchesJournal -BackupDirectory $backupDirectory -Journal $journal
 
@@ -1313,7 +1321,7 @@ function Invoke-SecureElevatedApply {
         $packageFullPath = Get-ExactFullPath $PackageZip
         $packageParent = Split-Path -Parent $packageFullPath
         $cancelPath = Join-Path $packageParent 'cancel.txt'
-        $requiredSuffix = '\Jaye\Switzerland VPN\Updates\' + $validatedId
+        $requiredSuffix = '\Justichuu\Switzerland VPN\Updates\' + $validatedId
         if (-not [IO.Path]::IsPathRooted($packageFullPath) -or
             $packageFullPath.StartsWith('\\') -or
             -not $packageParent.EndsWith($requiredSuffix, [StringComparison]::OrdinalIgnoreCase) -or
@@ -1405,7 +1413,7 @@ function Invoke-SecureElevatedApply {
         }
         $registration = Get-ItemProperty -LiteralPath $uninstallKey
         if (-not [string]::Equals([string]$registration.InstallLocation, $context.InstallDirectory, [StringComparison]::OrdinalIgnoreCase) -or
-            -not [string]::Equals([string]$registration.Publisher, 'Jaye', [StringComparison]::Ordinal)) {
+            -not (Test-SupportedPublisher ([string]$registration.Publisher))) {
             throw 'The Windows uninstall registration does not match this installation.'
         }
         $registryVersionExisted = $registration.PSObject.Properties.Name -contains 'DisplayVersion'
@@ -1502,7 +1510,7 @@ function Invoke-SecureElevatedApply {
                 $rollbackComplete = $true
             }
             catch {
-                $failure += ' Automatic rollback also had a problem. Keep the backup and update journal; ask Jaye for help.'
+                $failure += ' Automatic rollback also had a problem. Keep the backup and update journal; ask Justichuu for help.'
             }
         }
         if ($statusDirectory) {
@@ -1676,7 +1684,7 @@ try {
     $assets = $metadata.Assets
     Invoke-GitHubCli -GitHubCli $gh -Arguments @('release', 'verify', $ExpectedTag, '--repo', $repository)
 
-    $workRoot = Join-Path $env:LOCALAPPDATA 'Jaye\Switzerland VPN\Updates'
+    $workRoot = Join-Path $env:LOCALAPPDATA 'Justichuu\Switzerland VPN\Updates'
     $workDirectory = Join-Path $workRoot $validatedId
     $localFailurePath = Join-Path $workDirectory 'failure.txt'
     if (Test-Path -LiteralPath $workDirectory) {
@@ -1804,7 +1812,7 @@ catch {
 }
 finally {
     if (-not $keepWorkDirectory -and $workDirectory -and (Test-Path -LiteralPath $workDirectory -PathType Container)) {
-        $safeRoot = (Get-ExactFullPath (Join-Path $env:LOCALAPPDATA 'Jaye\Switzerland VPN\Updates')) + '\'
+        $safeRoot = (Get-ExactFullPath (Join-Path $env:LOCALAPPDATA 'Justichuu\Switzerland VPN\Updates')) + '\'
         $resolvedWork = Get-ExactFullPath $workDirectory
         if ($resolvedWork.StartsWith($safeRoot, [StringComparison]::OrdinalIgnoreCase)) {
             Start-Sleep -Milliseconds 750
