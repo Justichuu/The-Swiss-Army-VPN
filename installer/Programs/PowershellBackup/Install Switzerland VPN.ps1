@@ -1168,8 +1168,7 @@ function Invoke-ManagedInstallUpgrade {
         }
         Copy-AndVerifyUpgradeFile -Source (Join-Path $installDir 'VPN Server.txt') `
             -Destination (Join-Path $newInstall 'VPN Server.txt')
-        # Skip copying VPN Servers.txt during upgrade to match expected file count of 10
-        # This file is optional and can be restored from the user's backup if needed
+        Copy-AndVerifyUpgradeFile -Source $serverPoolFile -Destination (Join-Path $newInstall 'VPN Servers.txt')
 
         $updatedMarker = [ordered]@{
             ProductName = $vpnName
