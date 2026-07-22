@@ -25,9 +25,9 @@ using System.Windows.Forms;
 [assembly: System.Reflection.AssemblyCompany("Justichuu")]
 [assembly: System.Reflection.AssemblyProduct("Switzerland VPN")]
 [assembly: System.Reflection.AssemblyCopyright("Copyright 2026 Justichuu")]
-[assembly: System.Reflection.AssemblyVersion("1.3.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.3.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersion("1.3.0.0")]
+[assembly: System.Reflection.AssemblyVersion("1.3.1.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.3.1.0")]
+[assembly: System.Reflection.AssemblyInformationalVersion("1.3.1.0")]
 
 namespace SwitzerlandVpn
 {
@@ -39,7 +39,7 @@ namespace SwitzerlandVpn
         // The project handle changed because I got bored; keep the old publisher only for safe upgrades.
         internal const string LegacyPublisher = "Jaye";
         internal const string DefaultServer = "ch221.nordvpn.com";
-        internal const string CurrentVersion = "1.3.0";
+        internal const string CurrentVersion = "1.3.1";
         internal const string GitHubRepository = "Justichuu/The-Swiss-Army-VPN";
         internal const string RepositoryUrl = "https://github.com/Justichuu/The-Swiss-Army-VPN";
         internal const string UpdateScriptName = "Update Switzerland VPN.ps1";

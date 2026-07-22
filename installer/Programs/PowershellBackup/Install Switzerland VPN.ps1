@@ -13,7 +13,7 @@ $ruleGroup = 'Switzerland VPN Kill Switch'
 $publisher = 'Justichuu'
 # The project handle changed because I got bored; accept the old publisher only while upgrading.
 $legacyPublisher = 'Jaye'
-$installVersion = '1.3.0'
+$installVersion = '1.3.1'
 $installParent = $null
 $installDir = $null
 $validatedInstallTarget = $null
@@ -985,7 +985,7 @@ function Get-ValidatedManagedUpgradeContext {
     if ([version]$ExpectedVersion -ge [version]'1.2.0') {
         $requiredFiles += 'Switch Switzerland VPN Server.ps1', 'VPN Servers.txt'
     }
-    if ([version]$ExpectedVersion -ge [version]'1.3.0') {
+    if ([version]$ExpectedVersion -ge [version]'1.3.1') {
         $requiredFiles += 'Emergency Unlock.exe'
     }
     if ($RequireUpdateHelper) { $requiredFiles += 'Update Switzerland VPN.ps1' }
