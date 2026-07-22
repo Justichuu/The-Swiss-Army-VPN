@@ -149,8 +149,8 @@ try {
 
     $expectedFileVersion = $Version + '.0'
     $versionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($executable)
-    if ($versionInfo.FileVersion -ne $expectedFileVersion -or $versionInfo.CompanyName -ne 'Jaye') {
-        throw "Built executable metadata does not match version $expectedFileVersion and publisher Jaye."
+    if ($versionInfo.FileVersion -ne $expectedFileVersion -or $versionInfo.CompanyName -ne 'Justichuu') {
+        throw "Built executable metadata does not match version $expectedFileVersion and publisher Justichuu."
     }
 
     $programRoot = Join-Path $applicationStage 'Programs'

@@ -22,9 +22,9 @@ using System.Windows.Forms;
 
 [assembly: System.Reflection.AssemblyTitle("Switzerland VPN")]
 [assembly: System.Reflection.AssemblyDescription("Switzerland VPN kill-switch widget")]
-[assembly: System.Reflection.AssemblyCompany("Jaye")]
+[assembly: System.Reflection.AssemblyCompany("Justichuu")]
 [assembly: System.Reflection.AssemblyProduct("Switzerland VPN")]
-[assembly: System.Reflection.AssemblyCopyright("Copyright 2026 Jaye")]
+[assembly: System.Reflection.AssemblyCopyright("Copyright 2026 Justichuu")]
 [assembly: System.Reflection.AssemblyVersion("1.2.0.0")]
 [assembly: System.Reflection.AssemblyFileVersion("1.2.0.0")]
 [assembly: System.Reflection.AssemblyInformationalVersion("1.2.0.0")]
@@ -35,6 +35,9 @@ namespace SwitzerlandVpn
     {
         internal const string VpnName = "Switzerland VPN";
         internal const string RuleGroup = "Switzerland VPN Kill Switch";
+        internal const string Publisher = "Justichuu";
+        // The project handle changed because I got bored; keep the old publisher only for safe upgrades.
+        internal const string LegacyPublisher = "Jaye";
         internal const string DefaultServer = "ch221.nordvpn.com";
         internal const string CurrentVersion = "1.2.0";
         internal const string GitHubRepository = "Justichuu/The-Swiss-Army-VPN";
@@ -61,6 +64,12 @@ namespace SwitzerlandVpn
                 return value.Length == 0 ? DefaultServer : value;
             }
         }
+
+        internal static bool IsSupportedPublisher(string value)
+        {
+            return string.Equals(value, Publisher, StringComparison.Ordinal) ||
+                string.Equals(value, LegacyPublisher, StringComparison.Ordinal);
+        }
     }
 
     internal sealed class WidgetState
@@ -73,6 +82,11 @@ namespace SwitzerlandVpn
         internal bool KillSwitchIncomplete;
         internal bool FirewallProtectionOff;
         internal bool ManagedRulesPresent;
+        internal WidgetDisplayState? PreviewDisplayState;
+        internal bool PreviewTelemetryAvailable;
+        internal long PreviewLatencyMilliseconds;
+        internal double PreviewDownloadMbps;
+        internal double PreviewUploadMbps;
         internal string Error;
     }
 
@@ -170,7 +184,7 @@ namespace SwitzerlandVpn
 
                 string statePath = Path.Combine(stateDirectory, "install-state.json");
                 if (!Directory.Exists(stateDirectory) || !File.Exists(statePath))
-                    throw new InvalidOperationException("Update recovery data is incomplete. Ask Jaye for help.");
+                    throw new InvalidOperationException("Update recovery data is incomplete. Ask Justichuu for help.");
                 AssertNormalPath(stateDirectory, true);
                 AssertNormalPath(statePath, false);
 
@@ -236,7 +250,7 @@ namespace SwitzerlandVpn
                 {
                     State = UpdateRecoveryLaunchState.Failed,
                     ErrorMessage = string.IsNullOrWhiteSpace(ex.Message)
-                        ? "Windows could not start update recovery. Ask Jaye for help."
+                        ? "Windows could not start update recovery. Ask Justichuu for help."
                         : ex.Message
                 };
             }
@@ -373,7 +387,7 @@ namespace SwitzerlandVpn
             {
                 throw new InvalidOperationException(
                     "The latest release is not locked against changes. Update stopped safely. " +
-                    "Ask Jaye to publish an immutable release.");
+                    "Ask Justichuu to publish an immutable release.");
             }
 
             string versionText = string.Format(
@@ -1123,7 +1137,7 @@ namespace SwitzerlandVpn
                     return
                         "Switzerland VPN does not have a usable saved sign-in.\r\n\r\n" +
                         "Choose SET UP SIGN-IN, enter the NordVPN manual service username and password, " +
-                        "and save them. Then try " + actionName + " again. Ask Jaye if you need the credentials." + recovery;
+                        "and save them. Then try " + actionName + " again. Ask Justichuu if you need the credentials." + recovery;
                 case 691:
                     return
                         "Windows rejected the saved VPN username or password.\r\n\r\n" +
@@ -1151,7 +1165,7 @@ namespace SwitzerlandVpn
                 case 812:
                     return
                         "The VPN server refused the connection settings or account policy. Reinstall Switzerland VPN " +
-                        "and try again. Ask Jaye if it still fails." + recovery;
+                        "and try again. Ask Justichuu if it still fails." + recovery;
                 case 13801:
                     return
                         "Windows could not verify the VPN server's security credentials. Reinstall Switzerland VPN " +
@@ -2550,7 +2564,7 @@ namespace SwitzerlandVpn
 
             Label footer = new Label
             {
-                Text = "Jaye's Swiss Army VPN",
+                Text = "Justichuu's Swiss Army VPN",
                 ForeColor = Color.FromArgb(184, 190, 201),
                 BackColor = Color.Transparent,
                 Font = new Font("Segoe UI", 7.5f),
@@ -2872,7 +2886,7 @@ namespace SwitzerlandVpn
             string transactionId = Guid.NewGuid().ToString("N");
             string localUpdateRoot = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "Jaye",
+                "Justichuu",
                 "Switzerland VPN",
                 "Updates",
                 transactionId);
@@ -3009,7 +3023,7 @@ namespace SwitzerlandVpn
             {
                 string safeRoot = Path.GetFullPath(Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "Jaye", "Switzerland VPN", "Updates")).TrimEnd('\\') + "\\";
+                    "Justichuu", "Switzerland VPN", "Updates")).TrimEnd('\\') + "\\";
                 string resolved = Path.GetFullPath(directory).TrimEnd('\\');
                 if (resolved.StartsWith(safeRoot, StringComparison.OrdinalIgnoreCase) &&
                     Regex.IsMatch(Path.GetFileName(resolved), "^[a-f0-9]{32}$", RegexOptions.CultureInvariant) &&
@@ -3075,7 +3089,7 @@ namespace SwitzerlandVpn
                 false))
             {
                 if (key == null ||
-                    !string.Equals(Convert.ToString(key.GetValue("Publisher")), "Jaye", StringComparison.Ordinal) ||
+                    !AppConfig.IsSupportedPublisher(Convert.ToString(key.GetValue("Publisher"))) ||
                     !string.Equals(Convert.ToString(key.GetValue("DisplayVersion")), AppConfig.CurrentVersion, StringComparison.Ordinal) ||
                     !string.Equals(
                         Path.GetFullPath(Convert.ToString(key.GetValue("InstallLocation"))).TrimEnd('\\'),
@@ -3258,7 +3272,7 @@ namespace SwitzerlandVpn
                         "Sign-in has not been set up for Switzerland VPN.\r\n\r\n" +
                         "Choose Yes to arm the kill switch and open SET UP SIGN-IN. Enter the NordVPN manual " +
                         "service username and password, then connect in the Windows dialog. " +
-                        "Ask Jaye if you need the credentials.\r\n\r\n" +
+                        "Ask Justichuu if you need the credentials.\r\n\r\n" +
                         networkNotice,
                         "Sign-In Required",
                         MessageBoxButtons.YesNo,
@@ -3596,14 +3610,14 @@ namespace SwitzerlandVpn
                 });
                 if (process == null)
                     throw new InvalidOperationException(
-                        "Windows could not open Administrator approval. Try again or ask Jaye.");
+                        "Windows could not open Administrator approval. Try again or ask Justichuu.");
             }
             catch (Win32Exception ex)
             {
                 if (ex.NativeErrorCode == 1223)
                     throw new InvalidOperationException("Administrator approval was canceled. No changes were made.");
                 throw new InvalidOperationException(
-                    "Windows could not open Administrator approval. Try again or ask Jaye.");
+                    "Windows could not open Administrator approval. Try again or ask Justichuu.");
             }
 
             using (process)
@@ -3634,12 +3648,12 @@ namespace SwitzerlandVpn
                     if (string.Equals(command, "--firewall-remove", StringComparison.OrdinalIgnoreCase))
                         throw new InvalidOperationException(
                             "The kill switch could not be fully removed. Internet may still be blocked. " +
-                            "Run Emergency Unlock or ask Jaye.");
+                            "Run Emergency Unlock or ask Justichuu.");
                     if (string.Equals(command, "--clear-default-credentials", StringComparison.OrdinalIgnoreCase))
                         throw new InvalidOperationException(
                             "Windows could not clear the shared default VPN sign-in. " +
-                            "The sign-in saved for this Windows account was not changed. Try again or ask Jaye.");
-                    throw new InvalidOperationException("The requested VPN change failed. Try again or ask Jaye.");
+                            "The sign-in saved for this Windows account was not changed. Try again or ask Justichuu.");
+                    throw new InvalidOperationException("The requested VPN change failed. Try again or ask Justichuu.");
                 }
             }
         }
@@ -3687,7 +3701,7 @@ namespace SwitzerlandVpn
                 if (RasManager.HasSavedCredentials(AppConfig.VpnName))
                     throw new InvalidOperationException(
                         "Windows still reports a saved Switzerland VPN sign-in for this account. " +
-                        "Nothing was reported as cleared; try again or ask Jaye.");
+                        "Nothing was reported as cleared; try again or ask Justichuu.");
                 MessageBox.Show(
                     "The shared default sign-in and credentials saved for this Windows account are now cleared.\r\n\r\n" +
                     (connected
@@ -4058,7 +4072,7 @@ namespace SwitzerlandVpn
                 ResetActionLabels();
                 bool unavailable = !string.IsNullOrEmpty(state.Error);
                 ApplyControlState(unavailable ? null : state);
-                ApplyDisplayState(GetDisplayState(state), state);
+                ApplyDisplayState(state.PreviewDisplayState ?? GetDisplayState(state), state);
                 ApplyPreviewTelemetry(state);
             }
             catch
@@ -4696,7 +4710,11 @@ namespace SwitzerlandVpn
             bool protectedState = state != null && state.Connected && state.KillSwitchActive &&
                 !state.KillSwitchIncomplete && !state.FirewallProtectionOff;
             SetTelemetryDisplay(
-                protectedState
+                protectedState && state.PreviewTelemetryAvailable
+                    ? "PROTECTED | LATENCY " + state.PreviewLatencyMilliseconds.ToString(CultureInfo.InvariantCulture) +
+                      " ms | D " + state.PreviewDownloadMbps.ToString("0.0", CultureInfo.InvariantCulture) +
+                      " / U " + state.PreviewUploadMbps.ToString("0.0", CultureInfo.InvariantCulture) + " Mbps"
+                    : protectedState
                     ? "PROTECTED | LATENCY -- | D -- / U -- Mbps"
                     : "NOT PROTECTED | LATENCY OFF | D -- / U -- Mbps",
                 protectedState
@@ -5388,7 +5406,11 @@ namespace SwitzerlandVpn
             switch (name.ToLowerInvariant())
             {
                 case "disconnected": return new WidgetState();
+                case "connecting": return new WidgetState { PreviewDisplayState = WidgetDisplayState.Connecting };
                 case "protected": return new WidgetState { Connected = true, KillSwitchActive = true };
+                case "working": return CreateWorkingPreview(24, 84.6, 18.2);
+                case "working2": return CreateWorkingPreview(22, 86.1, 17.9);
+                case "working3": return CreateWorkingPreview(25, 83.8, 18.4);
                 case "unprotected": return new WidgetState { Connected = true };
                 case "blocked": return new WidgetState { KillSwitchActive = true };
                 case "incomplete": return new WidgetState { KillSwitchIncomplete = true };
@@ -5402,6 +5424,23 @@ namespace SwitzerlandVpn
                 case "error": return new WidgetState { Error = "Windows could not read the VPN or firewall status." };
                 default: throw new ArgumentException("Unknown preview state: " + name);
             }
+        }
+
+        /// <summary>
+        /// Creates a protected documentation-preview state with representative live-monitor values.
+        /// These values are visual examples only and never enter the live monitoring path.
+        /// </summary>
+        private static WidgetState CreateWorkingPreview(long latencyMilliseconds, double downloadMbps, double uploadMbps)
+        {
+            return new WidgetState
+            {
+                Connected = true,
+                KillSwitchActive = true,
+                PreviewTelemetryAvailable = true,
+                PreviewLatencyMilliseconds = latencyMilliseconds,
+                PreviewDownloadMbps = downloadMbps,
+                PreviewUploadMbps = uploadMbps
+            };
         }
 
     }

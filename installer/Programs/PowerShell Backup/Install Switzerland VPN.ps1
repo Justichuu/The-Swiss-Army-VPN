@@ -10,6 +10,9 @@ Add-Type -AssemblyName System.Windows.Forms
 
 $vpnName = 'Switzerland VPN'
 $ruleGroup = 'Switzerland VPN Kill Switch'
+$publisher = 'Justichuu'
+# The project handle changed because I got bored; accept the old publisher only while upgrading.
+$legacyPublisher = 'Jaye'
 $installVersion = '1.2.0'
 $installParent = $null
 $installDir = $null
@@ -448,6 +451,11 @@ function Get-ValidatedServer {
     return $server
 }
 
+function Test-SupportedPublisher([string]$Value) {
+    return [string]::Equals($Value, $publisher, [StringComparison]::Ordinal) -or
+        [string]::Equals($Value, $legacyPublisher, [StringComparison]::Ordinal)
+}
+
 function Assert-ValidatedServerPool {
     $servers = @(
         Get-Content -LiteralPath $serverPoolFile |
@@ -857,7 +865,7 @@ function Get-ManagedInstallParentHint {
         $registration = Get-ItemProperty -LiteralPath $uninstallKey
         $location = Get-ExactFullPath ([string]$registration.InstallLocation)
         if (-not [string]::Equals([string]$registration.DisplayName, $vpnName, [StringComparison]::Ordinal) -or
-            -not [string]::Equals([string]$registration.Publisher, 'Jaye', [StringComparison]::Ordinal) -or
+            -not (Test-SupportedPublisher ([string]$registration.Publisher)) -or
             -not [string]::Equals([IO.Path]::GetFileName($location), $vpnName, [StringComparison]::Ordinal)) {
             return $null
         }
@@ -971,7 +979,8 @@ function Get-ValidatedManagedUpgradeContext {
 
     $appPath = Join-Path $installDir 'Switzerland VPN.exe'
     $versionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($appPath)
-    if ($versionInfo.CompanyName -ne 'Jaye' -or $versionInfo.FileVersion -ne ($ExpectedVersion + '.0')) {
+    if (-not (Test-SupportedPublisher ([string]$versionInfo.CompanyName)) -or
+        $versionInfo.FileVersion -ne ($ExpectedVersion + '.0')) {
         throw 'The installed program does not match its owned version record. Nothing was changed.'
     }
 
@@ -980,7 +989,7 @@ function Get-ValidatedManagedUpgradeContext {
     }
     $registration = Get-ItemProperty -LiteralPath $uninstallKey
     if (-not [string]::Equals([string]$registration.DisplayName, $vpnName, [StringComparison]::Ordinal) -or
-        -not [string]::Equals([string]$registration.Publisher, 'Jaye', [StringComparison]::Ordinal) -or
+        -not (Test-SupportedPublisher ([string]$registration.Publisher)) -or
         -not [string]::Equals([string]$registration.InstallLocation, $installDir, [StringComparison]::OrdinalIgnoreCase) -or
         -not [string]::Equals([string]$registration.DisplayVersion, $ExpectedVersion, [StringComparison]::Ordinal)) {
         throw 'The existing Windows uninstall registration does not match this installation. Nothing was changed.'
@@ -1082,7 +1091,9 @@ function Invoke-ManagedInstallUpgrade {
     $stateBackup = Join-Path $transactionRoot 'install-state.json'
     $stateTemporary = Join-Path $stateDir ('install-state.upgrade-' + [guid]::NewGuid().ToString('N') + '.json')
     $stateReplaceBackup = Join-Path $stateDir ('install-state.rollback-' + [guid]::NewGuid().ToString('N') + '.json')
-    $oldRegistryVersion = [string](Get-ItemProperty -LiteralPath $uninstallKey).DisplayVersion
+    $oldRegistration = Get-ItemProperty -LiteralPath $uninstallKey
+    $oldRegistryVersion = [string]$oldRegistration.DisplayVersion
+    $oldRegistryPublisher = [string]$oldRegistration.Publisher
     $backupMoved = $false
     $stateChanged = $false
     $registryChanged = $false
@@ -1134,7 +1145,7 @@ function Invoke-ManagedInstallUpgrade {
         Set-ProtectedApplicationDirectoryAcl -Path $newInstall
 
         $newVersionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $newInstall 'Switzerland VPN.exe'))
-        if ($newVersionInfo.CompanyName -ne 'Jaye' -or $newVersionInfo.FileVersion -ne ($installVersion + '.0') -or
+        if ($newVersionInfo.CompanyName -ne $publisher -or $newVersionInfo.FileVersion -ne ($installVersion + '.0') -or
             @(Get-ChildItem -LiteralPath $newInstall -Force).Count -ne 9) {
             throw 'The staged upgrade failed its publisher, version, or file-layout check.'
         }
@@ -1164,11 +1175,17 @@ function Invoke-ManagedInstallUpgrade {
 
         New-ItemProperty -LiteralPath $uninstallKey -Name DisplayVersion -Value $installVersion `
             -PropertyType String -Force | Out-Null
+        New-ItemProperty -LiteralPath $uninstallKey -Name Publisher -Value $publisher `
+            -PropertyType String -Force | Out-Null
         $registryChanged = $true
 
         $verified = Get-ValidatedManagedUpgradeContext -ExpectedVersion $installVersion -RequireUpdateHelper
         if (-not [string]::Equals($verified.InstallId, $Context.InstallId, [StringComparison]::Ordinal)) {
             throw 'The upgraded installation failed its final ownership check.'
+        }
+        $verifiedRegistration = Get-ItemProperty -LiteralPath $uninstallKey
+        if (-not [string]::Equals([string]$verifiedRegistration.Publisher, $publisher, [StringComparison]::Ordinal)) {
+            throw 'The upgraded installation did not retain the new publisher identity.'
         }
 
         $upgradedExecutable = Join-Path $installDir 'Switzerland VPN.exe'
@@ -1197,6 +1214,8 @@ function Invoke-ManagedInstallUpgrade {
             if ($registryChanged) {
                 New-ItemProperty -LiteralPath $uninstallKey -Name DisplayVersion -Value $oldRegistryVersion `
                     -PropertyType String -Force | Out-Null
+                New-ItemProperty -LiteralPath $uninstallKey -Name Publisher -Value $oldRegistryPublisher `
+                    -PropertyType String -Force | Out-Null
             }
             if ($stateChanged -and (Test-Path -LiteralPath $stateBackup -PathType Leaf)) {
                 Copy-Item -LiteralPath $stateBackup -Destination $stateTemporary -Force
@@ -1224,7 +1243,7 @@ function Invoke-ManagedInstallUpgrade {
             $rollbackFailure = $_.Exception.Message
         }
         if ($rollbackFailure) {
-            throw "$failure Automatic rollback also failed: $rollbackFailure Keep the installer open and ask Jaye for help."
+            throw "$failure Automatic rollback also failed: $rollbackFailure Keep the installer open and ask Justichuu for help."
         }
         throw "$failure The previous installation was restored."
     }
@@ -1582,7 +1601,7 @@ try {
     New-Item -Path $uninstallKey -Force | Out-Null
     New-ItemProperty -Path $uninstallKey -Name DisplayName -Value 'Switzerland VPN' -PropertyType String -Force | Out-Null
     New-ItemProperty -Path $uninstallKey -Name DisplayVersion -Value $installVersion -PropertyType String -Force | Out-Null
-    New-ItemProperty -Path $uninstallKey -Name Publisher -Value 'Jaye' -PropertyType String -Force | Out-Null
+    New-ItemProperty -Path $uninstallKey -Name Publisher -Value $publisher -PropertyType String -Force | Out-Null
     New-ItemProperty -Path $uninstallKey -Name DisplayIcon -Value "$exePath,0" -PropertyType String -Force | Out-Null
     New-ItemProperty -Path $uninstallKey -Name InstallLocation -Value $installDir -PropertyType String -Force | Out-Null
     New-ItemProperty -Path $uninstallKey -Name UninstallString `

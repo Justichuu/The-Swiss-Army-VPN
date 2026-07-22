@@ -1,8 +1,8 @@
-# Jaye's Swiss Army VPN
+# Justichuu's Swiss Army VPN
 
 A lightweight Windows tray widget for a Switzerland IKEv2 VPN, backed by Windows' built-in VPN client.
 
-![Switzerland VPN widget](docs/widget.png)
+![Switzerland VPN connecting and reporting protected latency](docs/media/vpn-working-demo/vpn-working-demo.gif)
 
 ## What it does
 
@@ -45,5 +45,22 @@ Build output goes to `artifacts\`. The build validates PowerShell syntax, packag
 The kill switch affects the whole computer while armed. The app may disconnect other active Windows RAS VPN sessions during a controlled connection change. Use **DISCONNECT + UNLOCK** to restore normal internet.
 
 Current builds are unsigned, so Windows SmartScreen may show a warning.
+
+## Mascot
+
+Pikachu brought sunglasses.
+
+```text
+       /\            /\
+      /  \__________/  \
+     /                  \
+    |    [###]  [###]    |
+    |       .--.          |__
+    |   .--'____'--.      |  \__
+     \  \________/       /      `-.
+      `-._____________.-'   /\/\___/
+          /  |    |  \
+         /___|    |___\
+```
 
 This is an unofficial project and is not affiliated with or endorsed by NordVPN. Licensed under GPL-3.0-only.
