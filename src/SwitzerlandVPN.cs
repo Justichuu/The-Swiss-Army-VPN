@@ -5,15 +5,19 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
+using System.Globalization;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
 using System.Net.NetworkInformation;
+using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.ServiceProcess;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 [assembly: System.Reflection.AssemblyTitle("Switzerland VPN")]
@@ -21,9 +25,9 @@ using System.Windows.Forms;
 [assembly: System.Reflection.AssemblyCompany("Jaye")]
 [assembly: System.Reflection.AssemblyProduct("Switzerland VPN")]
 [assembly: System.Reflection.AssemblyCopyright("Copyright 2026 Jaye")]
-[assembly: System.Reflection.AssemblyVersion("1.1.1.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.1.1.0")]
-[assembly: System.Reflection.AssemblyInformationalVersion("1.1.1.0")]
+[assembly: System.Reflection.AssemblyVersion("1.1.2.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.1.2.0")]
+[assembly: System.Reflection.AssemblyInformationalVersion("1.1.2.0")]
 
 namespace SwitzerlandVpn
 {
@@ -32,7 +36,7 @@ namespace SwitzerlandVpn
         internal const string VpnName = "Switzerland VPN";
         internal const string RuleGroup = "Switzerland VPN Kill Switch";
         internal const string DefaultServer = "ch221.nordvpn.com";
-        internal const string CurrentVersion = "1.1.1";
+        internal const string CurrentVersion = "1.1.2";
         internal const string GitHubRepository = "Justichuu/The-Swiss-Army-VPN";
         internal const string RepositoryUrl = "https://github.com/Justichuu/The-Swiss-Army-VPN";
         internal const string UpdateScriptName = "Update Switzerland VPN.ps1";
@@ -64,6 +68,7 @@ namespace SwitzerlandVpn
         internal bool Connected;
         internal bool ConnectionAmbiguous;
         internal IntPtr ConnectionHandle;
+        internal uint TunnelInterfaceIndex;
         internal bool KillSwitchActive;
         internal bool KillSwitchIncomplete;
         internal bool FirewallProtectionOff;
@@ -536,6 +541,10 @@ namespace SwitzerlandVpn
         private const uint RasCredentialDomain = 0x00000004;
         private const uint RasCredentialDefault = 0x00000008;
         private const int RasConnectionStateConnected = 0x2000;
+        private const uint RasApiVersionCurrent = 4;
+        private const int RasProjectionInfoTypeIkev2 = 2;
+        private const uint RasProjectionInfoBaseSize = 108;
+        private const uint RasProjectionInfoMaximumSize = 65536;
 
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode, Pack = 4)]
         private struct RASCONN
@@ -558,7 +567,7 @@ namespace SwitzerlandVpn
             public int dwSubEntry;
             public Guid guidEntry;
             public int dwFlags;
-            public long luid;
+            public ulong logonSessionLuid;
             public Guid guidCorrelationId;
         }
 
@@ -644,6 +653,12 @@ namespace SwitzerlandVpn
             IntPtr connection,
             ref RAS_STATS statistics);
 
+        [DllImport("rasapi32.dll", EntryPoint = "RasGetProjectionInfoEx", ExactSpelling = true)]
+        private static extern uint RasGetProjectionInfoEx(
+            IntPtr connection,
+            IntPtr projection,
+            ref uint bufferSize);
+
         internal static List<RasConnection> GetConnections()
         {
             int bufferSize = 0;
@@ -672,9 +687,10 @@ namespace SwitzerlandVpn
 
                     if (result == ErrorBufferTooSmall && suppliedSize > bufferSize)
                     {
+                        IntPtr replacement = Marshal.AllocHGlobal(suppliedSize);
                         Marshal.FreeHGlobal(buffer);
                         bufferSize = suppliedSize;
-                        buffer = Marshal.AllocHGlobal(bufferSize);
+                        buffer = replacement;
                         continue;
                     }
 
@@ -728,6 +744,97 @@ namespace SwitzerlandVpn
             uint result = RasGetConnectStatus(connection, ref status);
             if (result != ErrorSuccess) return false;
             return status.rasconnstate == RasConnectionStateConnected && status.dwError == 0;
+        }
+
+        /// <summary>
+        /// Maps one exact IKEv2 RAS handle to its Windows IPv4 interface index by reading the
+        /// handle's documented projection address and finding the one adapter that owns it. An
+        /// unavailable or ambiguous mapping returns zero; this method never guesses an adapter.
+        /// </summary>
+        internal static uint GetConnectionInterfaceIndex(IntPtr connection)
+        {
+            if (connection == IntPtr.Zero || !IsConnectionEstablished(connection)) return 0;
+
+            IPAddress projectedAddress = TryGetProjectedIkev2Ipv4Address(connection);
+            if (projectedAddress == null) return 0;
+            List<uint> matches = FindIpv4InterfaceIndices(projectedAddress);
+            return matches.Count == 1 ? matches[0] : 0;
+        }
+
+        /// <summary>
+        /// Reads the binary IPv4 client address from the IKEv2 member of RAS_PROJECTION_INFO.
+        /// The native union has architecture-dependent pointer fields after the values used here,
+        /// so a bounded raw buffer keeps the shared leading layout exact on both x86 and x64.
+        /// </summary>
+        private static IPAddress TryGetProjectedIkev2Ipv4Address(IntPtr connection)
+        {
+            uint allocationSize = RasProjectionInfoBaseSize;
+            for (int attempt = 0; attempt < 2; attempt++)
+            {
+                if (allocationSize < RasProjectionInfoBaseSize ||
+                    allocationSize > RasProjectionInfoMaximumSize)
+                    return null;
+
+                int byteCount = checked((int)allocationSize);
+                IntPtr projection = Marshal.AllocHGlobal(byteCount);
+                try
+                {
+                    Marshal.Copy(new byte[byteCount], 0, projection, byteCount);
+                    Marshal.WriteInt32(projection, 0, checked((int)RasApiVersionCurrent));
+                    uint returnedSize = allocationSize;
+                    uint result = RasGetProjectionInfoEx(connection, projection, ref returnedSize);
+                    if (result == ErrorBufferTooSmall && returnedSize > allocationSize)
+                    {
+                        allocationSize = returnedSize;
+                        continue;
+                    }
+                    if (result != ErrorSuccess ||
+                        returnedSize < 16 ||
+                        Marshal.ReadInt32(projection, 4) != RasProjectionInfoTypeIkev2 ||
+                        unchecked((uint)Marshal.ReadInt32(projection, 8)) != ErrorSuccess)
+                        return null;
+
+                    byte[] addressBytes = new byte[4];
+                    Marshal.Copy(IntPtr.Add(projection, 12), addressBytes, 0, addressBytes.Length);
+                    IPAddress address = new IPAddress(addressBytes);
+                    if (address.AddressFamily != AddressFamily.InterNetwork ||
+                        IPAddress.Any.Equals(address) ||
+                        IPAddress.Loopback.Equals(address))
+                        return null;
+                    return address;
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(projection);
+                }
+            }
+            return null;
+        }
+
+        private static List<uint> FindIpv4InterfaceIndices(IPAddress requiredAddress)
+        {
+            List<uint> matches = new List<uint>();
+            foreach (NetworkInterface adapter in NetworkInterface.GetAllNetworkInterfaces())
+            {
+                if (adapter.OperationalStatus != OperationalStatus.Up)
+                    continue;
+                try
+                {
+                    IPInterfaceProperties properties = adapter.GetIPProperties();
+                    bool addressMatches = properties.UnicastAddresses.Any(unicast =>
+                        unicast.Address != null &&
+                        unicast.Address.AddressFamily == AddressFamily.InterNetwork &&
+                        !IPAddress.Any.Equals(unicast.Address) &&
+                        !IPAddress.Loopback.Equals(unicast.Address) &&
+                        (requiredAddress == null || requiredAddress.Equals(unicast.Address)));
+                    if (!addressMatches) continue;
+                    IPv4InterfaceProperties ipv4 = properties.GetIPv4Properties();
+                    if (ipv4 != null && ipv4.Index > 0)
+                        matches.Add(checked((uint)ipv4.Index));
+                }
+                catch (NetworkInformationException) { }
+            }
+            return matches.Distinct().ToList();
         }
 
         /// <summary>
@@ -1464,7 +1571,7 @@ namespace SwitzerlandVpn
             bool hasActiveRasConnection = RasManager.GetConnections().Count > 0;
             foreach (NetworkInterface adapter in NetworkInterface.GetAllNetworkInterfaces())
             {
-                if (adapter.OperationalStatus != OperationalStatus.Up || !HasGateway(adapter)) continue;
+                if (adapter.OperationalStatus != OperationalStatus.Up || !CanCarryEgress(adapter)) continue;
 
                 int type = (int)adapter.NetworkInterfaceType;
                 bool handled =
@@ -1545,22 +1652,45 @@ namespace SwitzerlandVpn
             return addresses.Distinct().ToArray();
         }
 
-        private static bool HasGateway(NetworkInterface adapter)
+        /// <summary>
+        /// Treats an active adapter as a possible egress path when it has either a gateway or a
+        /// usable non-link-local address. Route-based tunnel and cellular adapters often omit a
+        /// conventional gateway, so gateway-only classification would let an unsupported path pass.
+        /// </summary>
+        private static bool CanCarryEgress(NetworkInterface adapter)
         {
             try
             {
-                return adapter.GetIPProperties().GatewayAddresses.Any(g =>
+                IPInterfaceProperties properties = adapter.GetIPProperties();
+                if (properties.GatewayAddresses.Any(g =>
                     g.Address != null &&
                     !IPAddress.Any.Equals(g.Address) &&
-                    !IPAddress.IPv6Any.Equals(g.Address));
+                    !IPAddress.IPv6Any.Equals(g.Address)))
+                    return true;
+
+                return properties.UnicastAddresses.Any(unicast =>
+                {
+                    IPAddress address = unicast.Address;
+                    if (address == null || IPAddress.Any.Equals(address) ||
+                        IPAddress.Loopback.Equals(address) || IPAddress.IPv6Any.Equals(address) ||
+                        IPAddress.IPv6None.Equals(address) || IPAddress.IPv6Loopback.Equals(address))
+                        return false;
+                    if (address.AddressFamily == AddressFamily.InterNetwork)
+                    {
+                        byte[] bytes = address.GetAddressBytes();
+                        return bytes.Length == 4 && !(bytes[0] == 169 && bytes[1] == 254);
+                    }
+                    return address.AddressFamily == AddressFamily.InterNetworkV6 &&
+                        !address.IsIPv6LinkLocal && !address.IsIPv6Multicast;
+                });
             }
             catch (NetworkInformationException)
             {
-                return false;
+                return true;
             }
         }
 
-        private static bool IsPublicIpv4(IPAddress address)
+        internal static bool IsPublicIpv4(IPAddress address)
         {
             byte[] b = address.GetAddressBytes();
             if (b.Length != 4) return false;
@@ -1571,10 +1701,523 @@ namespace SwitzerlandVpn
             if (b[0] >= 224) return false;
             return true;
         }
+
+        internal static bool IsPublicIpv6(IPAddress address)
+        {
+            if (address == null || address.AddressFamily != AddressFamily.InterNetworkV6 ||
+                IPAddress.IPv6Any.Equals(address) || IPAddress.IPv6None.Equals(address) ||
+                IPAddress.IPv6Loopback.Equals(address) || address.IsIPv6LinkLocal ||
+                address.IsIPv6Multicast || address.IsIPv6SiteLocal)
+                return false;
+
+            byte[] bytes = address.GetAddressBytes();
+            return bytes.Length == 16 && (bytes[0] & 0xFE) != 0xFC;
+        }
+    }
+
+    internal enum PublicAddressProbeStatus
+    {
+        NotRun,
+        Success,
+        Timeout,
+        Cancelled,
+        Unavailable,
+        InvalidResponse
+    }
+
+    internal enum ManagedRouteState
+    {
+        NotChecked,
+        ViaManagedTunnel,
+        BypassRoute,
+        Unavailable
+    }
+
+    internal enum LeakCheckState
+    {
+        Disabled,
+        WaitingForProtection,
+        Checking,
+        NoLeakSignals,
+        ExposureDetected,
+        CheckIncomplete
+    }
+
+    internal sealed class PublicAddressProbeResult
+    {
+        internal readonly PublicAddressProbeStatus Status;
+        internal readonly IPAddress Address;
+        internal readonly bool HttpResponseReceived;
+
+        internal PublicAddressProbeResult(PublicAddressProbeStatus status, IPAddress address)
+            : this(status, address, status == PublicAddressProbeStatus.Success)
+        {
+        }
+
+        internal PublicAddressProbeResult(
+            PublicAddressProbeStatus status,
+            IPAddress address,
+            bool httpResponseReceived)
+        {
+            Status = status;
+            Address = address;
+            HttpResponseReceived = httpResponseReceived;
+        }
+    }
+
+    internal sealed class LeakProbeConfiguration
+    {
+        internal readonly Uri Ipv4Endpoint;
+        internal readonly Uri Ipv6Endpoint;
+        internal readonly TimeSpan RequestTimeout;
+        internal readonly int MaximumResponseBytes;
+
+        internal LeakProbeConfiguration(
+            Uri ipv4Endpoint,
+            Uri ipv6Endpoint,
+            TimeSpan requestTimeout,
+            int maximumResponseBytes)
+        {
+            Ipv4Endpoint = ipv4Endpoint;
+            Ipv6Endpoint = ipv6Endpoint;
+            RequestTimeout = requestTimeout;
+            MaximumResponseBytes = maximumResponseBytes;
+        }
+    }
+
+    internal sealed class LeakProbeSweepResult
+    {
+        internal readonly ManagedRouteState RouteBefore;
+        internal readonly ManagedRouteState RouteAfter;
+        internal readonly PublicAddressProbeResult Ipv4;
+        internal readonly PublicAddressProbeResult Ipv6;
+
+        internal LeakProbeSweepResult(
+            ManagedRouteState routeBefore,
+            ManagedRouteState routeAfter,
+            PublicAddressProbeResult ipv4,
+            PublicAddressProbeResult ipv6)
+        {
+            RouteBefore = routeBefore;
+            RouteAfter = routeAfter;
+            Ipv4 = ipv4;
+            Ipv6 = ipv6;
+        }
+    }
+
+    internal sealed class LeakMonitorSnapshot
+    {
+        internal readonly LeakCheckState State;
+        internal readonly ManagedRouteState RouteState;
+        internal readonly PublicAddressProbeStatus Ipv4Status;
+        internal readonly PublicAddressProbeStatus Ipv6Status;
+        internal readonly bool Ipv4ResponseReceived;
+        internal readonly bool Ipv6ResponseReceived;
+        internal readonly DateTime ObservedUtc;
+
+        internal LeakMonitorSnapshot(
+            LeakCheckState state,
+            ManagedRouteState routeState,
+            PublicAddressProbeStatus ipv4Status,
+            PublicAddressProbeStatus ipv6Status,
+            bool ipv4ResponseReceived,
+            bool ipv6ResponseReceived,
+            DateTime observedUtc)
+        {
+            State = state;
+            RouteState = routeState;
+            Ipv4Status = ipv4Status;
+            Ipv6Status = ipv6Status;
+            Ipv4ResponseReceived = ipv4ResponseReceived;
+            Ipv6ResponseReceived = ipv6ResponseReceived;
+            ObservedUtc = observedUtc;
+        }
+
+        internal static LeakMonitorSnapshot Create(LeakCheckState state)
+        {
+            return new LeakMonitorSnapshot(
+                state,
+                ManagedRouteState.NotChecked,
+                PublicAddressProbeStatus.NotRun,
+                PublicAddressProbeStatus.NotRun,
+                false,
+                false,
+                DateTime.UtcNow);
+        }
+
+        /// <summary>
+        /// Reduces route and public-address observations to one conservative display state. A failed
+        /// IPv6 request is only "no response"; it is never treated as proof that leakage is impossible.
+        /// </summary>
+        internal static LeakMonitorSnapshot FromSweep(LeakProbeSweepResult sweep)
+        {
+            ManagedRouteState routeState = sweep.RouteBefore == ManagedRouteState.BypassRoute &&
+                sweep.RouteAfter == ManagedRouteState.BypassRoute
+                    ? ManagedRouteState.BypassRoute
+                    : sweep.RouteBefore == ManagedRouteState.ViaManagedTunnel &&
+                      sweep.RouteAfter == ManagedRouteState.ViaManagedTunnel
+                        ? ManagedRouteState.ViaManagedTunnel
+                        : ManagedRouteState.Unavailable;
+
+            bool ipv4Exposure = sweep.Ipv4.HttpResponseReceived &&
+                routeState == ManagedRouteState.BypassRoute;
+            bool ipv6Exposure = sweep.Ipv6.HttpResponseReceived;
+            LeakCheckState state;
+            if (ipv4Exposure || ipv6Exposure)
+            {
+                state = LeakCheckState.ExposureDetected;
+            }
+            else if (sweep.Ipv4.Status == PublicAddressProbeStatus.Success &&
+                routeState == ManagedRouteState.ViaManagedTunnel)
+            {
+                state = LeakCheckState.NoLeakSignals;
+            }
+            else
+            {
+                state = LeakCheckState.CheckIncomplete;
+            }
+
+            return new LeakMonitorSnapshot(
+                state,
+                routeState,
+                sweep.Ipv4.Status,
+                sweep.Ipv6.Status,
+                sweep.Ipv4.HttpResponseReceived,
+                sweep.Ipv6.HttpResponseReceived,
+                DateTime.UtcNow);
+        }
+    }
+
+    /// <summary>
+    /// Compares the exact RAS-derived interface index with Windows' selected interface for every
+    /// resolved probe destination. Checking the route avoids guessing from public-IP geography.
+    /// </summary>
+    internal static class NetworkRouteProbe
+    {
+        private const uint ErrorSuccess = 0;
+        private const short AddressFamilyIpv4 = 2;
+        private const short AddressFamilyIpv6 = 23;
+
+        [DllImport("iphlpapi.dll")]
+        private static extern uint GetBestInterfaceEx(
+            IntPtr destinationAddress,
+            out uint bestInterfaceIndex);
+
+        internal static ManagedRouteState Inspect(IPAddress[] destinations, uint expectedInterfaceIndex)
+        {
+            if (expectedInterfaceIndex == 0 || destinations == null || destinations.Length == 0)
+                return ManagedRouteState.Unavailable;
+
+            bool inspectedAny = false;
+            foreach (IPAddress destination in destinations)
+            {
+                if (destination == null) continue;
+                IntPtr socketAddress = IntPtr.Zero;
+                try
+                {
+                    socketAddress = CreateSocketAddress(destination);
+                    uint bestInterfaceIndex;
+                    if (GetBestInterfaceEx(socketAddress, out bestInterfaceIndex) != ErrorSuccess ||
+                        bestInterfaceIndex == 0)
+                        return ManagedRouteState.Unavailable;
+                    inspectedAny = true;
+                    if (bestInterfaceIndex != expectedInterfaceIndex)
+                        return ManagedRouteState.BypassRoute;
+                }
+                finally
+                {
+                    if (socketAddress != IntPtr.Zero) Marshal.FreeHGlobal(socketAddress);
+                }
+            }
+
+            return inspectedAny
+                ? ManagedRouteState.ViaManagedTunnel
+                : ManagedRouteState.Unavailable;
+        }
+
+        private static IntPtr CreateSocketAddress(IPAddress address)
+        {
+            byte[] addressBytes = address.GetAddressBytes();
+            bool ipv4 = address.AddressFamily == AddressFamily.InterNetwork;
+            bool ipv6 = address.AddressFamily == AddressFamily.InterNetworkV6;
+            if (!ipv4 && !ipv6)
+                throw new ArgumentException("Only IPv4 and IPv6 destinations are supported.", "address");
+
+            int size = ipv4 ? 16 : 28;
+            int addressOffset = ipv4 ? 4 : 8;
+            IntPtr socketAddress = Marshal.AllocHGlobal(size);
+            for (int offset = 0; offset < size; offset++) Marshal.WriteByte(socketAddress, offset, 0);
+            Marshal.WriteInt16(socketAddress, 0, ipv4 ? AddressFamilyIpv4 : AddressFamilyIpv6);
+            Marshal.Copy(addressBytes, 0, IntPtr.Add(socketAddress, addressOffset), addressBytes.Length);
+            if (ipv6 && address.ScopeId > 0)
+                Marshal.WriteInt32(socketAddress, 24, checked((int)address.ScopeId));
+            return socketAddress;
+        }
+    }
+
+    /// <summary>
+    /// Runs bounded, proxy-disabled HTTPS probes against ipify's documented IPv4-only and
+    /// IPv6-only endpoints. Responses are capped and accepted only when they contain one public IP.
+    /// </summary>
+    internal static class PublicIpLeakProbe
+    {
+        private static readonly LeakProbeConfiguration Configuration = new LeakProbeConfiguration(
+            new Uri("https://api.ipify.org/", UriKind.Absolute),
+            new Uri("https://api6.ipify.org/", UriKind.Absolute),
+            TimeSpan.FromSeconds(4),
+            64);
+        private static readonly object DnsLookupSync = new object();
+        private static readonly Dictionary<string, Task<IPAddress[]>> PendingDnsLookups =
+            new Dictionary<string, Task<IPAddress[]>>(StringComparer.OrdinalIgnoreCase);
+
+        static PublicIpLeakProbe()
+        {
+            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
+        }
+
+        internal static LeakProbeSweepResult Run(uint expectedInterfaceIndex, CancellationToken cancellationToken)
+        {
+            IPAddress[] ipv4Destinations = ResolveEndpoint(
+                Configuration.Ipv4Endpoint,
+                AddressFamily.InterNetwork,
+                Configuration.RequestTimeout,
+                cancellationToken);
+            ManagedRouteState routeBefore = NetworkRouteProbe.Inspect(
+                ipv4Destinations,
+                expectedInterfaceIndex);
+
+            Task<PublicAddressProbeResult> ipv4Task = QueryAddressAsync(
+                Configuration.Ipv4Endpoint,
+                AddressFamily.InterNetwork,
+                cancellationToken);
+            Task<PublicAddressProbeResult> ipv6Task = QueryAddressAsync(
+                Configuration.Ipv6Endpoint,
+                AddressFamily.InterNetworkV6,
+                cancellationToken);
+            Task.WaitAll(new Task[] { ipv4Task, ipv6Task });
+
+            ManagedRouteState routeAfter = NetworkRouteProbe.Inspect(
+                ipv4Destinations,
+                expectedInterfaceIndex);
+            return new LeakProbeSweepResult(
+                routeBefore,
+                routeAfter,
+                ipv4Task.Result,
+                ipv6Task.Result);
+        }
+
+        /// <summary>
+        /// Resolves probe routes without letting synchronous name service stall the monitor worker.
+        /// The platform lookup itself cannot be cancelled on this target framework, so the caller
+        /// stops waiting at the deadline and treats the route check as unavailable.
+        /// </summary>
+        private static IPAddress[] ResolveEndpoint(
+            Uri endpoint,
+            AddressFamily family,
+            TimeSpan timeout,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                Task<IPAddress[]> lookup = GetOrStartDnsLookup(endpoint.DnsSafeHost);
+                Task deadline = Task.Delay(timeout, cancellationToken);
+                Task completed = Task.WhenAny(lookup, deadline).GetAwaiter().GetResult();
+                if (!ReferenceEquals(completed, lookup))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    return new IPAddress[0];
+                }
+
+                return lookup.GetAwaiter().GetResult()
+                    .Where(address => address.AddressFamily == family)
+                    .Where(address => family == AddressFamily.InterNetwork
+                        ? NetworkSafety.IsPublicIpv4(address)
+                        : NetworkSafety.IsPublicIpv6(address))
+                    .Distinct()
+                    .ToArray();
+            }
+            catch (SocketException)
+            {
+                return new IPAddress[0];
+            }
+        }
+
+        /// <summary>
+        /// Reuses one unresolved lookup per host so repeated monitor sweeps cannot accumulate an
+        /// unbounded queue when the platform DNS operation itself fails to return.
+        /// </summary>
+        private static Task<IPAddress[]> GetOrStartDnsLookup(string host)
+        {
+            lock (DnsLookupSync)
+            {
+                Task<IPAddress[]> existing;
+                if (PendingDnsLookups.TryGetValue(host, out existing) && !existing.IsCompleted)
+                    return existing;
+
+                Task<IPAddress[]> lookup = Dns.GetHostAddressesAsync(host);
+                PendingDnsLookups[host] = lookup;
+                lookup.ContinueWith(
+                    completed =>
+                    {
+                        lock (DnsLookupSync)
+                        {
+                            Task<IPAddress[]> current;
+                            if (PendingDnsLookups.TryGetValue(host, out current) &&
+                                ReferenceEquals(current, completed))
+                                PendingDnsLookups.Remove(host);
+                        }
+                        if (completed.IsFaulted)
+                        {
+                            AggregateException ignored = completed.Exception;
+                            GC.KeepAlive(ignored);
+                        }
+                    },
+                    CancellationToken.None,
+                    TaskContinuationOptions.ExecuteSynchronously,
+                    TaskScheduler.Default);
+                return lookup;
+            }
+        }
+
+        private static async Task<PublicAddressProbeResult> QueryAddressAsync(
+            Uri endpoint,
+            AddressFamily expectedFamily,
+            CancellationToken cancellationToken)
+        {
+            using (HttpClientHandler handler = new HttpClientHandler
+            {
+                AllowAutoRedirect = false,
+                UseProxy = false,
+                AutomaticDecompression = DecompressionMethods.None
+            })
+            using (HttpClient client = new HttpClient(handler)
+            {
+                Timeout = System.Threading.Timeout.InfiniteTimeSpan,
+                MaxResponseContentBufferSize = Configuration.MaximumResponseBytes + 1
+            })
+            using (HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, endpoint))
+            using (CancellationTokenSource requestCancellation =
+                CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+            {
+                requestCancellation.CancelAfter(Configuration.RequestTimeout);
+                CancellationToken requestToken = requestCancellation.Token;
+                request.Headers.TryAddWithoutValidation(
+                    "User-Agent",
+                    "Switzerland-VPN/" + AppConfig.CurrentVersion + " leak-monitor");
+                request.Headers.TryAddWithoutValidation("Cache-Control", "no-cache, no-store");
+                bool responseReceived = false;
+                try
+                {
+                    using (HttpResponseMessage response = await client.SendAsync(
+                        request,
+                        HttpCompletionOption.ResponseHeadersRead,
+                        requestToken).ConfigureAwait(false))
+                    {
+                        responseReceived = true;
+                        if (response.StatusCode != HttpStatusCode.OK)
+                            return new PublicAddressProbeResult(
+                                PublicAddressProbeStatus.InvalidResponse,
+                                null,
+                                true);
+                        if (response.Content.Headers.ContentLength.HasValue &&
+                            response.Content.Headers.ContentLength.Value > Configuration.MaximumResponseBytes)
+                            return new PublicAddressProbeResult(
+                                PublicAddressProbeStatus.InvalidResponse,
+                                null,
+                                true);
+
+                        using (Stream responseStream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
+                        {
+                            byte[] buffer = new byte[Configuration.MaximumResponseBytes + 1];
+                            int total = 0;
+                            while (total < buffer.Length)
+                            {
+                                int read = await responseStream.ReadAsync(
+                                    buffer,
+                                    total,
+                                    buffer.Length - total,
+                                    requestToken).ConfigureAwait(false);
+                                if (read == 0) break;
+                                total += read;
+                            }
+                            if (total == 0 || total > Configuration.MaximumResponseBytes)
+                                return new PublicAddressProbeResult(
+                                    PublicAddressProbeStatus.InvalidResponse,
+                                    null,
+                                    true);
+
+                            string value = Encoding.ASCII.GetString(buffer, 0, total).Trim();
+                            IPAddress address;
+                            bool valid = IPAddress.TryParse(value, out address) &&
+                                address.AddressFamily == expectedFamily &&
+                                (expectedFamily == AddressFamily.InterNetwork
+                                    ? NetworkSafety.IsPublicIpv4(address)
+                                    : NetworkSafety.IsPublicIpv6(address));
+                            return valid
+                                ? new PublicAddressProbeResult(PublicAddressProbeStatus.Success, address)
+                                : new PublicAddressProbeResult(
+                                    PublicAddressProbeStatus.InvalidResponse,
+                                    null,
+                                    true);
+                        }
+                    }
+                }
+                catch (TaskCanceledException)
+                {
+                    return new PublicAddressProbeResult(
+                        cancellationToken.IsCancellationRequested
+                            ? PublicAddressProbeStatus.Cancelled
+                            : PublicAddressProbeStatus.Timeout,
+                        null,
+                        responseReceived);
+                }
+                catch (HttpRequestException)
+                {
+                    return new PublicAddressProbeResult(
+                        PublicAddressProbeStatus.Unavailable,
+                        null,
+                        responseReceived);
+                }
+                catch (IOException)
+                {
+                    return new PublicAddressProbeResult(
+                        PublicAddressProbeStatus.Unavailable,
+                        null,
+                        responseReceived);
+                }
+            }
+        }
     }
 
     internal sealed class VpnForm : Form
     {
+        private sealed class WidgetLayout
+        {
+            internal readonly Size ClientSize = new Size(418, 363);
+            internal readonly Rectangle Title = new Rectangle(33, 24, 352, 31);
+            internal readonly Rectangle StatusPrefix = new Rectangle(33, 60, 61, 23);
+            internal readonly Rectangle Status = new Rectangle(101, 60, 284, 23);
+            internal readonly Rectangle Detail = new Rectangle(33, 86, 352, 21);
+            internal readonly Rectangle Connect = new Rectangle(33, 112, 169, 40);
+            internal readonly Rectangle Disconnect = new Rectangle(216, 112, 169, 40);
+            internal readonly Rectangle ConnectOnly = new Rectangle(33, 158, 81, 25);
+            internal readonly Rectangle ArmOnly = new Rectangle(121, 158, 81, 25);
+            internal readonly Rectangle DisconnectOnly = new Rectangle(216, 158, 81, 25);
+            internal readonly Rectangle UnlockOnly = new Rectangle(304, 158, 81, 25);
+            internal readonly Rectangle AlwaysOnTop = new Rectangle(33, 190, 110, 30);
+            internal readonly Rectangle Monitor = new Rectangle(154, 190, 110, 30);
+            internal readonly Rectangle Refresh = new Rectangle(275, 190, 110, 30);
+            internal readonly Rectangle SignIn = new Rectangle(33, 226, 169, 30);
+            internal readonly Rectangle ClearCredentials = new Rectangle(216, 226, 169, 30);
+            internal readonly Rectangle Telemetry = new Rectangle(33, 263, 352, 19);
+            internal readonly Rectangle Route = new Rectangle(33, 283, 352, 19);
+            internal readonly Rectangle Leak = new Rectangle(33, 303, 352, 19);
+            internal readonly Rectangle Version = new Rectangle(33, 324, 48, 18);
+            internal readonly Rectangle Update = new Rectangle(88, 324, 114, 18);
+            internal readonly Rectangle Footer = new Rectangle(216, 324, 169, 18);
+        }
+
         private sealed class VpnActionRequest
         {
             internal Action Execute;
@@ -1600,11 +2243,14 @@ namespace SwitzerlandVpn
         private static readonly Color ConnectButtonColor = Color.FromArgb(27, 139, 93);
         private static readonly Color DisconnectButtonColor = Color.FromArgb(177, 63, 68);
         private static readonly Color DisabledButtonColor = Color.FromArgb(63, 67, 76);
+        private static readonly WidgetLayout Grid = new WidgetLayout();
         private readonly Image themeBackground;
         private readonly Label statusPrefix;
         private readonly Label statusLabel;
         private readonly Label detailLabel;
         private readonly Label telemetryLabel;
+        private readonly Label routeLabel;
+        private readonly Label leakLabel;
         private readonly Button connectButton;
         private readonly Button connectOnlyButton;
         private readonly Button armOnlyButton;
@@ -1630,12 +2276,15 @@ namespace SwitzerlandVpn
         private readonly System.Windows.Forms.Timer timer;
         private readonly ToolTip toolTips;
         private readonly Dictionary<Control, string> controlToolTipText;
-        private const int VisibleMonitoringIntervalMilliseconds = 250;
-        private const int BackgroundMonitoringIntervalMilliseconds = 1000;
-        private static readonly TimeSpan ProtectionRefreshInterval = TimeSpan.FromSeconds(2);
-        private static readonly TimeSpan ProtectionFreshnessWindow = TimeSpan.FromSeconds(3);
-        private static readonly TimeSpan PingInterval = TimeSpan.FromSeconds(2);
-        private static readonly TimeSpan PingFreshnessWindow = TimeSpan.FromSeconds(5);
+        private string lastTrayStatus = "Starting";
+        private const int VisibleMonitoringIntervalMilliseconds = 1000;
+        private const int BackgroundMonitoringIntervalMilliseconds = 5000;
+        private static readonly TimeSpan ProtectionRefreshInterval = TimeSpan.FromSeconds(5);
+        private static readonly TimeSpan ProtectionFreshnessWindow = TimeSpan.FromSeconds(7);
+        private static readonly TimeSpan ConnectionFreshnessWindow = TimeSpan.FromSeconds(2);
+        private static readonly TimeSpan PingInterval = TimeSpan.FromSeconds(5);
+        private static readonly TimeSpan PingFreshnessWindow = TimeSpan.FromSeconds(12);
+        private static readonly TimeSpan LeakProbeInterval = TimeSpan.FromSeconds(60);
         private readonly object monitoringSync = new object();
         private WidgetState monitoredState;
         private DateTime monitoredStateObservedUtc = DateTime.MinValue;
@@ -1651,14 +2300,21 @@ namespace SwitzerlandVpn
         private long monitoredPingMilliseconds;
         private DateTime monitoredPingObservedUtc = DateTime.MinValue;
         private DateTime nextPingAllowedUtc = DateTime.MinValue;
+        private LeakMonitorSnapshot leakMonitorSnapshot = LeakMonitorSnapshot.Create(LeakCheckState.Disabled);
+        private DateTime nextLeakProbeAllowedUtc = DateTime.MinValue;
+        private CancellationTokenSource leakProbeCancellation;
         private long protectionGeneration;
+        private long monitoringEpoch;
         private int monitoringWorkerActive;
         private int pingWorkerActive;
+        private int leakProbeWorkerActive;
         private int forceStateRefreshRequested;
         private int monitoringUiUpdatePending;
         private int monitoringStateUiRefreshRequested;
+        private long monitoringStateUiRefreshEpoch;
         private volatile bool monitoringEnabled;
         private volatile bool monitoringStopped;
+        private volatile bool monitoringPausedForAction;
         private Control lastDisabledToolTipControl;
         private VpnOperation currentOperation = VpnOperation.None;
         private UpdateCheckState updateCheckState = UpdateCheckState.Idle;
@@ -1674,12 +2330,12 @@ namespace SwitzerlandVpn
         {
             previewState = preview;
             Text = "Switzerland VPN";
-            ClientSize = new Size(380, 330);
-            themeBackground = LoadThemeBackground(ClientSize);
-            MinimumSize = new Size(396, 369);
-            MaximumSize = new Size(396, 369);
-            StartPosition = FormStartPosition.Manual;
+            AutoScaleDimensions = new SizeF(96f, 96f);
+            AutoScaleMode = AutoScaleMode.Dpi;
             FormBorderStyle = FormBorderStyle.FixedSingle;
+            ClientSize = Grid.ClientSize;
+            themeBackground = LoadThemeBackground(Grid.ClientSize);
+            StartPosition = FormStartPosition.Manual;
             MaximizeBox = false;
             MinimizeBox = true;
             BackColor = Color.FromArgb(24, 26, 31);
@@ -1697,17 +2353,15 @@ namespace SwitzerlandVpn
             };
             RegisterToolTip(this, "Switzerland VPN controls and live protection status.");
 
-            Rectangle area = Screen.PrimaryScreen.WorkingArea;
-            Location = new Point(area.Right - Width - 18, area.Bottom - Height - 18);
-
             Label title = new Label
             {
                 Text = "SWITZERLAND VPN",
                 Font = new Font("Segoe UI Semibold", 14f),
                 ForeColor = Color.FromArgb(235, 238, 244),
                 BackColor = Color.Transparent,
-                AutoSize = true,
-                Location = new Point(30, 23)
+                AutoSize = false,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Bounds = Grid.Title
             };
             Controls.Add(title);
             RegisterToolTip(title, "Switzerland VPN controls.");
@@ -1715,10 +2369,11 @@ namespace SwitzerlandVpn
             statusPrefix = new Label
             {
                 Text = "STATUS:",
-                Font = new Font("Segoe UI Semibold", 9f),
+                Font = new Font("Segoe UI Semibold", 10f),
                 BackColor = Color.Transparent,
-                AutoSize = true,
-                Location = new Point(30, 58)
+                AutoSize = false,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Bounds = Grid.StatusPrefix
             };
             Controls.Add(statusPrefix);
             RegisterToolTip(statusPrefix, "Current VPN and kill-switch state.");
@@ -1729,8 +2384,8 @@ namespace SwitzerlandVpn
                 BackColor = Color.Transparent,
                 AutoSize = false,
                 AutoEllipsis = true,
-                Size = new Size(258, 22),
-                Location = new Point(92, 57)
+                TextAlign = ContentAlignment.MiddleLeft,
+                Bounds = Grid.Status
             };
             Controls.Add(statusLabel);
             RegisterToolTip(statusLabel, "Current VPN and kill-switch state.");
@@ -1741,27 +2396,35 @@ namespace SwitzerlandVpn
                 BackColor = Color.Transparent,
                 AutoSize = false,
                 AutoEllipsis = true,
-                Size = new Size(320, 20),
-                Location = new Point(30, 81)
+                TextAlign = ContentAlignment.MiddleCenter,
+                Bounds = Grid.Detail
             };
             Controls.Add(detailLabel);
             RegisterToolTip(detailLabel, "A short explanation of the current state.");
 
-            connectButton = NewButton("CONNECT + ARM", new Point(30, 106), ConnectButtonColor, new Size(154, 40));
-            disconnectButton = NewButton("DISCONNECT + UNLOCK", new Point(196, 106), DisconnectButtonColor, new Size(154, 40));
+            connectButton = NewButton(
+                "CONNECT + ARM",
+                Grid.Connect.Location,
+                ConnectButtonColor,
+                Grid.Connect.Size);
+            disconnectButton = NewButton(
+                "DISCONNECT + UNLOCK",
+                Grid.Disconnect.Location,
+                DisconnectButtonColor,
+                Grid.Disconnect.Size);
             Controls.Add(connectButton);
             Controls.Add(disconnectButton);
             RegisterToolTip(connectButton, "Arm protection, then connect the VPN.");
             RegisterToolTip(disconnectButton, "Disconnect the VPN, then restore normal internet.");
 
             connectOnlyButton = NewSmallButton(
-                "CONNECT ONLY", new Point(30, 151), ConnectButtonColor);
+                "CONNECT", Grid.ConnectOnly.Location, Grid.ConnectOnly.Size, ConnectButtonColor);
             armOnlyButton = NewSmallButton(
-                "ARM ONLY", new Point(110, 151), ConnectButtonColor);
+                "ARM", Grid.ArmOnly.Location, Grid.ArmOnly.Size, ConnectButtonColor);
             disconnectOnlyButton = NewSmallButton(
-                "DISCONNECT ONLY", new Point(196, 151), DisconnectButtonColor);
+                "DISCONNECT", Grid.DisconnectOnly.Location, Grid.DisconnectOnly.Size, DisconnectButtonColor);
             unlockOnlyButton = NewSmallButton(
-                "UNLOCK ONLY", new Point(276, 151), DisconnectButtonColor);
+                "UNLOCK", Grid.UnlockOnly.Location, Grid.UnlockOnly.Size, DisconnectButtonColor);
             Controls.Add(connectOnlyButton);
             Controls.Add(armOnlyButton);
             Controls.Add(disconnectOnlyButton);
@@ -1775,8 +2438,9 @@ namespace SwitzerlandVpn
             {
                 Text = "Always on top",
                 Checked = true,
-                AutoSize = true,
-                Location = new Point(30, 188),
+                AutoSize = false,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Bounds = Grid.AlwaysOnTop,
                 ForeColor = Color.FromArgb(225, 228, 235),
                 BackColor = Color.Transparent
             };
@@ -1787,25 +2451,40 @@ namespace SwitzerlandVpn
             {
                 Text = "Live monitor",
                 Checked = preview != null,
-                AutoSize = true,
-                Location = new Point(145, 188),
+                AutoSize = false,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Bounds = Grid.Monitor,
                 ForeColor = Color.FromArgb(225, 228, 235),
                 BackColor = Color.Transparent
             };
             Controls.Add(monitorCheck);
-            RegisterToolTip(monitorCheck, "Toggle live VPN traffic and latency checks. Turn off to save CPU.");
+            RegisterToolTip(
+                monitorCheck,
+                "Toggle traffic, latency, exact-route, IPv4, and IPv6 leak checks. Off means zero background probes.");
 
-            signInButton = NewButton("SET UP SIGN-IN", new Point(30, 217), Color.FromArgb(55, 89, 144), new Size(154, 29));
+            signInButton = NewButton(
+                "SET UP SIGN-IN",
+                Grid.SignIn.Location,
+                Color.FromArgb(55, 89, 144),
+                Grid.SignIn.Size);
             signInButton.Font = new Font("Segoe UI Semibold", 8.5f);
             Controls.Add(signInButton);
             RegisterToolTip(signInButton, "Save the VPN service sign-in.");
 
-            clearCredentialsButton = NewButton("CLEAR SAVED CREDENTIALS", new Point(196, 217), Color.FromArgb(116, 78, 46), new Size(154, 29));
+            clearCredentialsButton = NewButton(
+                "CLEAR SAVED CREDENTIALS",
+                Grid.ClearCredentials.Location,
+                Color.FromArgb(116, 78, 46),
+                Grid.ClearCredentials.Size);
             clearCredentialsButton.Font = new Font("Segoe UI Semibold", 7.5f);
             Controls.Add(clearCredentialsButton);
             RegisterToolTip(clearCredentialsButton, "Clear the saved VPN sign-in. Makes Windows forget the password. Finally, something it's good at.");
 
-            refreshButton = NewButton("REFRESH", new Point(276, 182), Color.FromArgb(42, 45, 53), new Size(74, 29));
+            refreshButton = NewButton(
+                "REFRESH",
+                Grid.Refresh.Location,
+                Color.FromArgb(42, 45, 53),
+                Grid.Refresh.Size);
             refreshButton.FlatAppearance.BorderSize = 1;
             refreshButton.FlatAppearance.BorderColor = Color.FromArgb(80, 85, 96);
             Controls.Add(refreshButton);
@@ -1823,12 +2502,51 @@ namespace SwitzerlandVpn
                 Font = new Font("Segoe UI Semibold", 7.75f),
                 AutoSize = false,
                 AutoEllipsis = true,
-                TextAlign = ContentAlignment.MiddleLeft,
-                Size = new Size(320, 24),
-                Location = new Point(30, 256)
+                TextAlign = ContentAlignment.MiddleCenter,
+                Bounds = Grid.Telemetry
             };
             Controls.Add(telemetryLabel);
-            RegisterToolTip(telemetryLabel, "Exact VPN traffic and protected-only ping. Not a speed test or leak test.");
+            RegisterToolTip(telemetryLabel, "Exact VPN traffic and protected-only latency. Traffic is not a speed test.");
+
+            routeLabel = new Label
+            {
+                Text = preview == null
+                    ? "ROUTE CHECK OFF"
+                    : "ROUTE: CHECKING | IPv4: -- | IPv6: --",
+                ForeColor = preview == null
+                    ? Color.FromArgb(132, 139, 151)
+                    : Color.FromArgb(84, 150, 235),
+                BackColor = Color.Transparent,
+                Font = new Font("Segoe UI Semibold", 7.75f),
+                AutoSize = false,
+                AutoEllipsis = true,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Bounds = Grid.Route
+            };
+            Controls.Add(routeLabel);
+            RegisterToolTip(
+                routeLabel,
+                "Checks this IPv4 probe uses the exact VPN. IPv6 isn't tunneled, so enabling it could leak.");
+
+            leakLabel = new Label
+            {
+                Text = preview == null
+                    ? "IP LEAK CHECK OFF"
+                    : "IP LEAK CHECK: WAITING",
+                ForeColor = preview == null
+                    ? Color.FromArgb(132, 139, 151)
+                    : Color.FromArgb(84, 150, 235),
+                BackColor = Color.Transparent,
+                Font = new Font("Segoe UI Semibold", 7.75f),
+                AutoSize = false,
+                AutoEllipsis = true,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Bounds = Grid.Leak
+            };
+            Controls.Add(leakLabel);
+            RegisterToolTip(
+                leakLabel,
+                "Direct no-proxy IP check via ipify. This app saves no IP history; it does not test DNS or browser WebRTC.");
 
             Label footer = new Label
             {
@@ -1838,8 +2556,7 @@ namespace SwitzerlandVpn
                 Font = new Font("Segoe UI", 7.5f),
                 TextAlign = ContentAlignment.MiddleRight,
                 AutoSize = false,
-                Size = new Size(160, 16),
-                Location = new Point(190, 296)
+                Bounds = Grid.Footer
             };
             Controls.Add(footer);
             RegisterToolTip(footer, "Application name.");
@@ -1850,11 +2567,13 @@ namespace SwitzerlandVpn
                 LinkColor = Color.FromArgb(184, 190, 201),
                 ActiveLinkColor = Color.White,
                 VisitedLinkColor = Color.FromArgb(184, 190, 201),
+                DisabledLinkColor = Color.FromArgb(132, 139, 151),
                 BackColor = Color.Transparent,
                 Font = new Font("Segoe UI", 7.5f),
-                AutoSize = true,
+                AutoSize = false,
+                TextAlign = ContentAlignment.MiddleLeft,
                 LinkBehavior = LinkBehavior.HoverUnderline,
-                Location = new Point(30, 296)
+                Bounds = Grid.Version
             };
             versionLink.LinkClicked += delegate { OpenRepository(); };
             Controls.Add(versionLink);
@@ -1866,11 +2585,13 @@ namespace SwitzerlandVpn
                 LinkColor = Color.FromArgb(184, 190, 201),
                 ActiveLinkColor = Color.White,
                 VisitedLinkColor = Color.FromArgb(184, 190, 201),
+                DisabledLinkColor = Color.FromArgb(132, 139, 151),
                 BackColor = Color.Transparent,
                 Font = new Font("Segoe UI", 7.5f),
-                AutoSize = true,
+                AutoSize = false,
+                TextAlign = ContentAlignment.MiddleLeft,
                 LinkBehavior = LinkBehavior.HoverUnderline,
-                Location = new Point(82, 296)
+                Bounds = Grid.Update
             };
             updateLink.LinkClicked += delegate { BeginCheckForUpdate(); };
             Controls.Add(updateLink);
@@ -1934,6 +2655,7 @@ namespace SwitzerlandVpn
             timer = new System.Windows.Forms.Timer { Interval = VisibleMonitoringIntervalMilliseconds };
             timer.Tick += delegate
             {
+                RefreshTelemetryLabel();
                 QueueMonitoringCycle(false);
             };
 
@@ -1955,7 +2677,11 @@ namespace SwitzerlandVpn
             {
                 TopMost = topMostCheck.Checked;
                 if (preview == null)
+                {
+                    Rectangle area = Screen.PrimaryScreen.WorkingArea;
+                    Location = new Point(area.Right - Width - 18, area.Bottom - Height - 18);
                     SetMonitoringEnabled(monitorCheck.Checked);
+                }
                 else
                     UpdateStatus();
             };
@@ -2429,10 +3155,10 @@ namespace SwitzerlandVpn
             return button;
         }
 
-        private static Button NewSmallButton(string text, Point location, Color color)
+        private static Button NewSmallButton(string text, Point location, Size size, Color color)
         {
-            Button button = NewButton(text, location, color, new Size(74, 25));
-            button.Font = new Font("Segoe UI Semibold", 6.75f);
+            Button button = NewButton(text, location, color, size);
+            button.Font = new Font("Segoe UI Semibold", 7.25f);
             return button;
         }
 
@@ -2494,6 +3220,8 @@ namespace SwitzerlandVpn
             if (disposing)
             {
                 monitoringStopped = true;
+                monitoringPausedForAction = true;
+                CancelLeakProbe();
                 if (timer != null)
                 {
                     timer.Stop();
@@ -3034,6 +3762,8 @@ namespace SwitzerlandVpn
 
         private void PauseMonitoringForAction()
         {
+            Interlocked.Increment(ref monitoringEpoch);
+            monitoringPausedForAction = true;
             timer.Stop();
             lock (monitoringSync)
             {
@@ -3044,11 +3774,19 @@ namespace SwitzerlandVpn
                 previousTrafficSample = null;
                 monitoredPingAvailable = false;
                 monitoredPingSucceeded = false;
+                leakMonitorSnapshot = LeakMonitorSnapshot.Create(LeakCheckState.WaitingForProtection);
+                nextLeakProbeAllowedUtc = DateTime.MinValue;
             }
+            CancelLeakProbe();
             if (monitoringEnabled)
             {
                 SetTelemetryDisplay(
                     "ACTION RUNNING | LIVE CHECK PAUSED",
+                    Color.FromArgb(84, 150, 235));
+                SetLeakDisplay(
+                    "ROUTE CHECK PAUSED DURING ACTION",
+                    Color.FromArgb(84, 150, 235),
+                    "IP LEAK CHECK: PAUSED",
                     Color.FromArgb(84, 150, 235));
             }
         }
@@ -3063,11 +3801,11 @@ namespace SwitzerlandVpn
             bool unlockingOnly = operation == VpnOperation.UnlockOnly;
             bool preparingSignIn = operation == VpnOperation.PrepareSignIn;
             connectButton.Text = connecting ? "CONNECTING..." : "CONNECT + ARM";
-            connectOnlyButton.Text = connectingOnly ? "CONNECTING..." : "CONNECT ONLY";
-            armOnlyButton.Text = armingOnly ? "ARMING..." : "ARM ONLY";
+            connectOnlyButton.Text = connectingOnly ? "CONNECT..." : "CONNECT";
+            armOnlyButton.Text = armingOnly ? "ARM..." : "ARM";
             disconnectButton.Text = disconnecting ? "DISCONNECTING..." : "DISCONNECT + UNLOCK";
-            disconnectOnlyButton.Text = disconnectingOnly ? "STOPPING..." : "DISCONNECT ONLY";
-            unlockOnlyButton.Text = unlockingOnly ? "UNLOCKING..." : "UNLOCK ONLY";
+            disconnectOnlyButton.Text = disconnectingOnly ? "STOP..." : "DISCONNECT";
+            unlockOnlyButton.Text = unlockingOnly ? "UNLOCK..." : "UNLOCK";
             signInButton.Text = preparingSignIn ? "ARMING SIGN-IN..." : "SET UP SIGN-IN";
             trayConnectItem.Text = connecting ? "Connecting + Arming..." : "Connect + Arm";
             trayConnectOnlyItem.Text = connectingOnly ? "Connecting Only..." : "Connect Only...";
@@ -3159,11 +3897,11 @@ namespace SwitzerlandVpn
         private void ResetActionLabels()
         {
             connectButton.Text = "CONNECT + ARM";
-            connectOnlyButton.Text = "CONNECT ONLY";
-            armOnlyButton.Text = "ARM ONLY";
+            connectOnlyButton.Text = "CONNECT";
+            armOnlyButton.Text = "ARM";
             disconnectButton.Text = "DISCONNECT + UNLOCK";
-            disconnectOnlyButton.Text = "DISCONNECT ONLY";
-            unlockOnlyButton.Text = "UNLOCK ONLY";
+            disconnectOnlyButton.Text = "DISCONNECT";
+            unlockOnlyButton.Text = "UNLOCK";
             signInButton.Text = "SET UP SIGN-IN";
             trayConnectItem.Text = "Connect + Arm";
             trayConnectOnlyItem.Text = "Connect Only...";
@@ -3201,6 +3939,7 @@ namespace SwitzerlandVpn
             signInButton.Enabled = signInEnabled;
             clearCredentialsButton.Enabled = !IsActionRunning;
             refreshButton.Enabled = !IsActionRunning;
+            monitorCheck.Enabled = !IsActionRunning;
             trayConnectItem.Enabled = connectEnabled;
             trayConnectOnlyItem.Enabled = connectOnlyEnabled;
             trayArmOnlyItem.Enabled = armOnlyEnabled;
@@ -3235,6 +3974,9 @@ namespace SwitzerlandVpn
             bool ambiguous = matches.Length > 1 || connections.Any(c =>
                 !string.Equals(c.Name, AppConfig.VpnName, StringComparison.OrdinalIgnoreCase));
             IntPtr connectionHandle = matches.Length == 1 ? matches[0].Handle : IntPtr.Zero;
+            uint tunnelInterfaceIndex = matches.Length == 1 && connected
+                ? RasManager.GetConnectionInterfaceIndex(matches[0].Handle)
+                : 0;
 
             try
             {
@@ -3244,6 +3986,7 @@ namespace SwitzerlandVpn
                     Connected = connected,
                     ConnectionAmbiguous = ambiguous,
                     ConnectionHandle = connectionHandle,
+                    TunnelInterfaceIndex = tunnelInterfaceIndex,
                     ManagedRulesPresent = firewall.Found > 0,
                     KillSwitchActive = firewall.Valid == AppConfig.RuleNames.Length,
                     KillSwitchIncomplete = firewall.Found > 0 &&
@@ -3267,6 +4010,7 @@ namespace SwitzerlandVpn
                     Connected = connected,
                     ConnectionAmbiguous = ambiguous,
                     ConnectionHandle = connectionHandle,
+                    TunnelInterfaceIndex = tunnelInterfaceIndex,
                     FirewallProtectionOff = true,
                     ManagedRulesPresent = stored.Found > 0,
                     KillSwitchIncomplete = stored.Found > 0
@@ -3327,15 +4071,23 @@ namespace SwitzerlandVpn
         }
 
         /// <summary>
-        /// Starts or stops every periodic traffic, ping, and protection probe. Manual status refresh
-        /// remains available while monitoring is off.
+        /// Starts or stops every periodic traffic, latency, route, and public-IP probe. Manual status
+        /// refresh remains available while monitoring is off.
         /// </summary>
         private void SetMonitoringEnabled(bool enabled)
         {
             if (previewState != null || monitoringStopped) return;
+            if (enabled && IsActionRunning) return;
+            Interlocked.Increment(ref monitoringEpoch);
             monitoringEnabled = enabled;
+            UpdateTrayToolTip();
             if (enabled)
             {
+                lock (monitoringSync)
+                {
+                    leakMonitorSnapshot = LeakMonitorSnapshot.Create(LeakCheckState.WaitingForProtection);
+                    nextLeakProbeAllowedUtc = DateTime.MinValue;
+                }
                 UpdateMonitoringTimerInterval();
                 timer.Start();
                 Interlocked.Exchange(ref forceStateRefreshRequested, 1);
@@ -3354,9 +4106,17 @@ namespace SwitzerlandVpn
                 previousTrafficSample = null;
                 monitoredPingAvailable = false;
                 monitoredPingSucceeded = false;
+                leakMonitorSnapshot = LeakMonitorSnapshot.Create(LeakCheckState.Disabled);
+                nextLeakProbeAllowedUtc = DateTime.MinValue;
             }
+            CancelLeakProbe();
             SetTelemetryDisplay(
                 "MONITOR OFF | CLICK LIVE MONITOR TO START",
+                Color.FromArgb(132, 139, 151));
+            SetLeakDisplay(
+                "ROUTE CHECK OFF",
+                Color.FromArgb(132, 139, 151),
+                "IP LEAK CHECK OFF",
                 Color.FromArgb(132, 139, 151));
             UpdateStatus();
         }
@@ -3367,7 +4127,14 @@ namespace SwitzerlandVpn
         /// </summary>
         private void ResumeMonitoringAfterAction()
         {
-            if (!monitoringEnabled || monitoringStopped) return;
+            if (monitoringStopped) return;
+            monitoringPausedForAction = false;
+            if (!monitoringEnabled) return;
+            lock (monitoringSync)
+            {
+                nextLeakProbeAllowedUtc = DateTime.MinValue;
+                leakMonitorSnapshot = LeakMonitorSnapshot.Create(LeakCheckState.WaitingForProtection);
+            }
             UpdateMonitoringTimerInterval();
             Interlocked.Exchange(ref forceStateRefreshRequested, 1);
             timer.Start();
@@ -3386,44 +4153,61 @@ namespace SwitzerlandVpn
         }
 
         /// <summary>
-        /// Queues one serialized monitoring pass. Firewall and topology checks are cached for two
-        /// seconds, while inexpensive exact-handle RAS counters are sampled four times a second when
-        /// visible and once a second in the system tray.
+        /// Queues one serialized monitoring pass. Firewall and topology checks are cached for five
+        /// seconds, while inexpensive exact-handle RAS counters run once a second when visible and
+        /// once every five seconds in the system tray.
         /// </summary>
         private void QueueMonitoringCycle(bool forceStateRefresh)
         {
-            if (previewState != null || !monitoringEnabled || monitoringStopped ||
+            if (previewState != null || !monitoringEnabled || monitoringStopped || monitoringPausedForAction ||
                 IsDisposed || Disposing) return;
             if (forceStateRefresh) Interlocked.Exchange(ref forceStateRefreshRequested, 1);
             if (Interlocked.CompareExchange(ref monitoringWorkerActive, 1, 0) != 0) return;
+            long expectedEpoch = Interlocked.Read(ref monitoringEpoch);
 
             ThreadPool.QueueUserWorkItem(delegate
             {
                 bool stateRefreshed = false;
                 try
                 {
-                    stateRefreshed = CollectMonitoringSample();
+                    stateRefreshed = CollectMonitoringSample(expectedEpoch);
                 }
                 catch
                 {
-                    CacheUnavailableMonitoringState();
-                    stateRefreshed = true;
+                    stateRefreshed = CacheUnavailableMonitoringState(expectedEpoch);
                 }
                 finally
                 {
                     Interlocked.Exchange(ref monitoringWorkerActive, 0);
                 }
-                PostMonitoringUpdate(stateRefreshed);
+                PostMonitoringUpdate(stateRefreshed, expectedEpoch);
             });
         }
 
-        private bool CollectMonitoringSample()
+        private bool IsMonitoringCycleCurrent(long expectedEpoch)
         {
+            return monitoringEnabled && !monitoringStopped && !monitoringPausedForAction &&
+                Interlocked.Read(ref monitoringEpoch) == expectedEpoch;
+        }
+
+        private bool CollectMonitoringSample(long expectedEpoch)
+        {
+            if (!IsMonitoringCycleCurrent(expectedEpoch)) return false;
             DateTime now = DateTime.UtcNow;
             bool force = Interlocked.Exchange(ref forceStateRefreshRequested, 0) != 0;
+            if (!IsMonitoringCycleCurrent(expectedEpoch))
+            {
+                if (force) Interlocked.Exchange(ref forceStateRefreshRequested, 1);
+                return false;
+            }
             bool refreshState;
             lock (monitoringSync)
             {
+                if (!IsMonitoringCycleCurrent(expectedEpoch))
+                {
+                    if (force) Interlocked.Exchange(ref forceStateRefreshRequested, 1);
+                    return false;
+                }
                 refreshState = force || monitoredState == null || now >= nextStateRefreshUtc;
                 if (refreshState) nextStateRefreshUtc = now.Add(ProtectionRefreshInterval);
             }
@@ -3439,13 +4223,16 @@ namespace SwitzerlandVpn
                         Error = "Windows could not verify VPN and firewall protection."
                     };
                 }
-                CacheObservedState(observed, DateTime.UtcNow);
+                if (!IsMonitoringCycleCurrent(expectedEpoch) ||
+                    !CacheObservedState(observed, DateTime.UtcNow, expectedEpoch))
+                    return false;
             }
 
             WidgetState state;
             DateTime stateObservedUtc;
             lock (monitoringSync)
             {
+                if (!IsMonitoringCycleCurrent(expectedEpoch)) return false;
                 state = monitoredState;
                 stateObservedUtc = monitoredStateObservedUtc;
             }
@@ -3453,35 +4240,52 @@ namespace SwitzerlandVpn
             if (state == null || !state.Connected || state.ConnectionHandle == IntPtr.Zero ||
                 DateTime.UtcNow - stateObservedUtc > ProtectionFreshnessWindow)
             {
-                InvalidateConnectionVerification();
+                if (IsMonitoringCycleCurrent(expectedEpoch)) InvalidateConnectionVerification();
                 return refreshState;
             }
 
             try
             {
+                if (!IsMonitoringCycleCurrent(expectedEpoch)) return refreshState;
                 if (!RasManager.IsConnectionEstablished(state.ConnectionHandle))
                     throw new InvalidOperationException("The VPN tunnel is not fully connected.");
                 RasConnectionStatistics statistics = RasManager.ReadConnectionStatistics(state.ConnectionHandle);
-                CacheTrafficSample(state.ConnectionHandle, statistics);
+                if (!CacheTrafficSample(state.ConnectionHandle, statistics, expectedEpoch))
+                    return refreshState;
+                if (!IsMonitoringCycleCurrent(expectedEpoch)) return refreshState;
                 QueuePingIfEligible();
+                QueueLeakProbeIfEligible();
             }
             catch
             {
-                InvalidateConnectionVerification();
-                Interlocked.Exchange(ref forceStateRefreshRequested, 1);
+                if (IsMonitoringCycleCurrent(expectedEpoch))
+                {
+                    InvalidateConnectionVerification();
+                    Interlocked.Exchange(ref forceStateRefreshRequested, 1);
+                }
             }
             return refreshState;
         }
 
-        private void CacheObservedState(WidgetState state, DateTime observedUtc)
+        private bool CacheObservedState(WidgetState state, DateTime observedUtc, long expectedEpoch)
         {
+            bool connectionChanged;
             lock (monitoringSync)
             {
+                if (!IsMonitoringCycleCurrent(expectedEpoch)) return false;
                 bool oldProtected = IsFullyProtected(monitoredState);
                 IntPtr oldHandle = monitoredState == null ? IntPtr.Zero : monitoredState.ConnectionHandle;
+                uint oldInterfaceIndex = monitoredState == null ? 0 : monitoredState.TunnelInterfaceIndex;
                 bool newProtected = IsFullyProtected(state);
-                if (oldProtected != newProtected || oldHandle != state.ConnectionHandle)
+                connectionChanged = oldProtected != newProtected || oldHandle != state.ConnectionHandle ||
+                    oldInterfaceIndex != state.TunnelInterfaceIndex;
+                if (connectionChanged)
+                {
                     protectionGeneration++;
+                    nextLeakProbeAllowedUtc = DateTime.MinValue;
+                    leakMonitorSnapshot = LeakMonitorSnapshot.Create(
+                        newProtected ? LeakCheckState.Checking : LeakCheckState.WaitingForProtection);
+                }
 
                 monitoredState = state;
                 monitoredStateObservedUtc = observedUtc;
@@ -3498,20 +4302,26 @@ namespace SwitzerlandVpn
                     monitoredConnectionObservedUtc = DateTime.MinValue;
                 }
             }
+            if (connectionChanged) CancelLeakProbe();
+            return true;
         }
 
-        private void CacheUnavailableMonitoringState()
+        private bool CacheUnavailableMonitoringState(long expectedEpoch)
         {
-            CacheObservedState(
+            return CacheObservedState(
                 new WidgetState { Error = "Windows could not verify VPN and firewall protection." },
-                DateTime.UtcNow);
+                DateTime.UtcNow,
+                expectedEpoch);
         }
 
         /// <summary>
         /// Converts modular 32-bit RAS byte-counter deltas into decimal megabits per second. A new
         /// handle or reduced connection duration is treated as a reset and requires a warm-up sample.
         /// </summary>
-        private void CacheTrafficSample(IntPtr handle, RasConnectionStatistics statistics)
+        private bool CacheTrafficSample(
+            IntPtr handle,
+            RasConnectionStatistics statistics,
+            long expectedEpoch)
         {
             long timestamp = Stopwatch.GetTimestamp();
             TrafficCounterSample current = new TrafficCounterSample
@@ -3525,13 +4335,14 @@ namespace SwitzerlandVpn
 
             lock (monitoringSync)
             {
+                if (!IsMonitoringCycleCurrent(expectedEpoch)) return false;
                 TrafficCounterSample previous = previousTrafficSample;
                 monitoredTrafficReady = false;
                 if (previous != null && previous.ConnectionHandle == handle &&
                     statistics.ConnectDurationMilliseconds >= previous.ConnectDurationMilliseconds)
                 {
                     double seconds = (timestamp - previous.Timestamp) / (double)Stopwatch.Frequency;
-                    if (seconds >= 0.05 && seconds <= 2.0)
+                    if (seconds >= 0.05 && seconds <= 10.0)
                     {
                         uint receivedDelta = unchecked(statistics.BytesReceived - previous.BytesReceived);
                         uint sentDelta = unchecked(statistics.BytesSent - previous.BytesSent);
@@ -3545,13 +4356,21 @@ namespace SwitzerlandVpn
                 monitoredConnectionVerified = true;
                 monitoredConnectionObservedUtc = DateTime.UtcNow;
             }
+            return true;
         }
 
         private void InvalidateConnectionVerification()
         {
+            bool connectionWasVerified;
             lock (monitoringSync)
             {
-                if (monitoredConnectionVerified) protectionGeneration++;
+                connectionWasVerified = monitoredConnectionVerified;
+                if (connectionWasVerified)
+                {
+                    protectionGeneration++;
+                    nextLeakProbeAllowedUtc = DateTime.MinValue;
+                    leakMonitorSnapshot = LeakMonitorSnapshot.Create(LeakCheckState.WaitingForProtection);
+                }
                 monitoredConnectionVerified = false;
                 monitoredConnectionObservedUtc = DateTime.MinValue;
                 monitoredTrafficReady = false;
@@ -3559,120 +4378,284 @@ namespace SwitzerlandVpn
                 monitoredPingAvailable = false;
                 monitoredPingSucceeded = false;
             }
+            if (connectionWasVerified) CancelLeakProbe();
         }
 
         /// <summary>
-        /// Starts at most one ICMP request every two seconds, only after fresh VPN, firewall, topology, and
+        /// Starts at most one ICMP request every five seconds, only after fresh VPN, firewall, topology, and
         /// exact-handle checks all pass. A generation and handle guard discards late replies.
         /// </summary>
         private void QueuePingIfEligible()
         {
-            if (!monitoringEnabled) return;
+            if (!monitoringEnabled || monitoringPausedForAction) return;
             DateTime now = DateTime.UtcNow;
             long generation;
             IntPtr handle;
+            uint tunnelInterfaceIndex;
             lock (monitoringSync)
             {
                 if (!IsFullyProtected(monitoredState) || !monitoredConnectionVerified ||
                     now - monitoredStateObservedUtc > ProtectionFreshnessWindow ||
-                    now - monitoredConnectionObservedUtc > TimeSpan.FromSeconds(1) ||
+                    now - monitoredConnectionObservedUtc > ConnectionFreshnessWindow ||
                     now < nextPingAllowedUtc)
                     return;
                 if (Interlocked.CompareExchange(ref pingWorkerActive, 1, 0) != 0) return;
                 nextPingAllowedUtc = now.Add(PingInterval);
                 generation = protectionGeneration;
                 handle = monitoredState.ConnectionHandle;
+                tunnelInterfaceIndex = monitoredState.TunnelInterfaceIndex;
             }
 
             ThreadPool.QueueUserWorkItem(delegate
             {
-                bool succeeded = false;
-                long milliseconds = 0;
                 try
                 {
-                    using (Ping ping = new Ping())
-                    {
-                        PingReply reply = ping.Send(IPAddress.Parse("1.1.1.1"), 750);
-                        succeeded = reply != null && reply.Status == IPStatus.Success;
-                        if (succeeded) milliseconds = reply.RoundtripTime;
-                    }
-                }
-                catch { }
-
-                bool sameConnectionStillEstablished = false;
-                try
-                {
-                    List<RasConnection> currentConnections = RasManager.GetConnections();
-                    RasConnection[] currentMatches = currentConnections
-                        .Where(c => string.Equals(
-                            c.Name,
-                            AppConfig.VpnName,
-                            StringComparison.OrdinalIgnoreCase))
-                        .ToArray();
-                    sameConnectionStillEstablished = currentConnections.Count == 1 &&
-                        currentMatches.Length == 1 &&
-                        currentMatches[0].Handle == handle &&
-                        RasManager.IsConnectionEstablished(handle);
-                }
-                catch { }
-
-                bool protectionStillValid = false;
-                if (sameConnectionStillEstablished)
-                {
+                    bool succeeded = false;
+                    long milliseconds = 0;
                     try
                     {
-                        FirewallRuleState currentRules = FirewallManager.GetRuleState();
-                        NetworkSafety.AssertSupportedEgress();
-                        protectionStillValid = currentRules.Valid == AppConfig.RuleNames.Length;
+                        using (Ping ping = new Ping())
+                        {
+                            PingReply reply = ping.Send(IPAddress.Parse("1.1.1.1"), 750);
+                            succeeded = reply != null && reply.Status == IPStatus.Success;
+                            if (succeeded) milliseconds = reply.RoundtripTime;
+                        }
                     }
                     catch { }
-                }
 
-                bool forceRefreshAfterProbe = false;
-                lock (monitoringSync)
-                {
-                    if (monitoringEnabled && sameConnectionStillEstablished && protectionStillValid &&
-                        generation == protectionGeneration && IsFullyProtected(monitoredState) &&
-                        monitoredState.ConnectionHandle == handle && monitoredConnectionVerified)
+                    bool sameConnectionStillEstablished = false;
+                    try
                     {
-                        monitoredPingAvailable = true;
-                        monitoredPingSucceeded = succeeded;
-                        monitoredPingMilliseconds = milliseconds;
-                        monitoredPingObservedUtc = DateTime.UtcNow;
+                        List<RasConnection> currentConnections = RasManager.GetConnections();
+                        RasConnection[] currentMatches = currentConnections
+                            .Where(c => string.Equals(
+                                c.Name,
+                                AppConfig.VpnName,
+                                StringComparison.OrdinalIgnoreCase))
+                            .ToArray();
+                        sameConnectionStillEstablished = currentConnections.Count == 1 &&
+                            currentMatches.Length == 1 &&
+                            currentMatches[0].Handle == handle &&
+                            RasManager.GetConnectionInterfaceIndex(handle) == tunnelInterfaceIndex &&
+                            RasManager.IsConnectionEstablished(handle);
                     }
-                    else if (monitoringEnabled && generation == protectionGeneration && monitoredState != null &&
-                        monitoredState.ConnectionHandle == handle)
+                    catch { }
+
+                    bool protectionStillValid = false;
+                    if (sameConnectionStillEstablished)
                     {
-                        protectionGeneration++;
-                        monitoredConnectionVerified = false;
-                        monitoredConnectionObservedUtc = DateTime.MinValue;
-                        monitoredTrafficReady = false;
-                        previousTrafficSample = null;
-                        monitoredPingAvailable = false;
-                        monitoredPingSucceeded = false;
-                        forceRefreshAfterProbe = true;
+                        try
+                        {
+                            FirewallRuleState currentRules = FirewallManager.GetRuleState();
+                            NetworkSafety.AssertSupportedEgress();
+                            protectionStillValid = currentRules.Valid == AppConfig.RuleNames.Length;
+                        }
+                        catch { }
+                    }
+
+                    bool forceRefreshAfterProbe = false;
+                    lock (monitoringSync)
+                    {
+                        if (monitoringEnabled && sameConnectionStillEstablished && protectionStillValid &&
+                            generation == protectionGeneration && IsFullyProtected(monitoredState) &&
+                            monitoredState.ConnectionHandle == handle &&
+                            monitoredState.TunnelInterfaceIndex == tunnelInterfaceIndex && monitoredConnectionVerified)
+                        {
+                            monitoredPingAvailable = true;
+                            monitoredPingSucceeded = succeeded;
+                            monitoredPingMilliseconds = milliseconds;
+                            monitoredPingObservedUtc = DateTime.UtcNow;
+                        }
+                        else if (monitoringEnabled && generation == protectionGeneration && monitoredState != null &&
+                            monitoredState.ConnectionHandle == handle &&
+                            monitoredState.TunnelInterfaceIndex == tunnelInterfaceIndex)
+                        {
+                            protectionGeneration++;
+                            monitoredConnectionVerified = false;
+                            monitoredConnectionObservedUtc = DateTime.MinValue;
+                            monitoredTrafficReady = false;
+                            previousTrafficSample = null;
+                            monitoredPingAvailable = false;
+                            monitoredPingSucceeded = false;
+                            forceRefreshAfterProbe = true;
+                        }
+                    }
+                    if (forceRefreshAfterProbe)
+                        Interlocked.Exchange(ref forceStateRefreshRequested, 1);
+                }
+                finally
+                {
+                    Interlocked.Exchange(ref pingWorkerActive, 0);
+                    PostMonitoringUpdate(false);
+                }
+            });
+        }
+
+        /// <summary>
+        /// Starts at most one low-frequency public-IP sweep after the exact RAS handle and its
+        /// tunnel interface index have both been freshly verified. Late results are rejected by
+        /// generation, handle, interface, firewall, topology, and connection checks.
+        /// </summary>
+        private void QueueLeakProbeIfEligible()
+        {
+            if (!monitoringEnabled || monitoringStopped || monitoringPausedForAction) return;
+            DateTime now = DateTime.UtcNow;
+            long generation;
+            IntPtr handle;
+            uint tunnelInterfaceIndex;
+            CancellationTokenSource cancellation;
+
+            lock (monitoringSync)
+            {
+                if (!IsFullyProtected(monitoredState) || !monitoredConnectionVerified ||
+                    now - monitoredStateObservedUtc > ProtectionFreshnessWindow ||
+                    now - monitoredConnectionObservedUtc > ConnectionFreshnessWindow)
+                {
+                    if (Interlocked.CompareExchange(ref leakProbeWorkerActive, 0, 0) == 0)
+                        leakMonitorSnapshot = LeakMonitorSnapshot.Create(LeakCheckState.WaitingForProtection);
+                    return;
+                }
+                if (now < nextLeakProbeAllowedUtc) return;
+                if (Interlocked.CompareExchange(ref leakProbeWorkerActive, 1, 0) != 0) return;
+
+                generation = protectionGeneration;
+                handle = monitoredState.ConnectionHandle;
+                tunnelInterfaceIndex = monitoredState.TunnelInterfaceIndex;
+                nextLeakProbeAllowedUtc = now.Add(LeakProbeInterval);
+                leakMonitorSnapshot = LeakMonitorSnapshot.Create(LeakCheckState.Checking);
+                cancellation = new CancellationTokenSource();
+                leakProbeCancellation = cancellation;
+            }
+
+            PostMonitoringUpdate(false);
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                try
+                {
+                    LeakProbeSweepResult sweep = PublicIpLeakProbe.Run(
+                        tunnelInterfaceIndex,
+                        cancellation.Token);
+                    if (cancellation.IsCancellationRequested) return;
+
+                    bool contextStillValid = IsLeakProbeContextStillValid(handle, tunnelInterfaceIndex);
+                    lock (monitoringSync)
+                    {
+                        bool sameGeneration = monitoringEnabled && !monitoringStopped &&
+                            generation == protectionGeneration && IsFullyProtected(monitoredState) &&
+                            monitoredState.ConnectionHandle == handle &&
+                            monitoredState.TunnelInterfaceIndex == tunnelInterfaceIndex &&
+                            monitoredConnectionVerified;
+                        if (sameGeneration && contextStillValid)
+                        {
+                            leakMonitorSnapshot = LeakMonitorSnapshot.FromSweep(sweep);
+                        }
+                        else if (sameGeneration)
+                        {
+                            protectionGeneration++;
+                            monitoredConnectionVerified = false;
+                            monitoredConnectionObservedUtc = DateTime.MinValue;
+                            monitoredTrafficReady = false;
+                            previousTrafficSample = null;
+                            monitoredPingAvailable = false;
+                            monitoredPingSucceeded = false;
+                            leakMonitorSnapshot = LeakMonitorSnapshot.Create(LeakCheckState.WaitingForProtection);
+                            nextLeakProbeAllowedUtc = DateTime.MinValue;
+                            Interlocked.Exchange(ref forceStateRefreshRequested, 1);
+                        }
                     }
                 }
-                if (forceRefreshAfterProbe)
-                    Interlocked.Exchange(ref forceStateRefreshRequested, 1);
-                Interlocked.Exchange(ref pingWorkerActive, 0);
-                PostMonitoringUpdate(false);
+                catch (Exception)
+                {
+                    if (!cancellation.IsCancellationRequested)
+                    {
+                        lock (monitoringSync)
+                        {
+                            if (monitoringEnabled && !monitoringStopped &&
+                                generation == protectionGeneration && IsFullyProtected(monitoredState) &&
+                                monitoredState.ConnectionHandle == handle &&
+                                monitoredState.TunnelInterfaceIndex == tunnelInterfaceIndex)
+                            {
+                                leakMonitorSnapshot = LeakMonitorSnapshot.Create(LeakCheckState.CheckIncomplete);
+                            }
+                        }
+                    }
+                }
+                finally
+                {
+                    lock (monitoringSync)
+                    {
+                        if (ReferenceEquals(leakProbeCancellation, cancellation))
+                            leakProbeCancellation = null;
+                    }
+                    cancellation.Dispose();
+                    Interlocked.Exchange(ref leakProbeWorkerActive, 0);
+                    PostMonitoringUpdate(false);
+                }
             });
+        }
+
+        private static bool IsLeakProbeContextStillValid(IntPtr handle, uint tunnelInterfaceIndex)
+        {
+            try
+            {
+                List<RasConnection> currentConnections = RasManager.GetConnections();
+                RasConnection[] currentMatches = currentConnections
+                    .Where(connection => string.Equals(
+                        connection.Name,
+                        AppConfig.VpnName,
+                        StringComparison.OrdinalIgnoreCase))
+                    .ToArray();
+                if (currentConnections.Count != 1 || currentMatches.Length != 1 ||
+                    currentMatches[0].Handle != handle ||
+                    RasManager.GetConnectionInterfaceIndex(handle) != tunnelInterfaceIndex ||
+                    !RasManager.IsConnectionEstablished(handle))
+                    return false;
+
+                FirewallRuleState currentRules = FirewallManager.GetRuleState();
+                NetworkSafety.AssertSupportedEgress();
+                return currentRules.Valid == AppConfig.RuleNames.Length;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private void CancelLeakProbe()
+        {
+            CancellationTokenSource cancellation;
+            lock (monitoringSync)
+            {
+                cancellation = leakProbeCancellation;
+                leakProbeCancellation = null;
+            }
+            if (cancellation == null) return;
+            try { cancellation.Cancel(); }
+            catch (ObjectDisposedException) { }
         }
 
         private static bool IsFullyProtected(WidgetState state)
         {
             return state != null && string.IsNullOrEmpty(state.Error) && state.Connected &&
                 !state.ConnectionAmbiguous && state.ConnectionHandle != IntPtr.Zero &&
+                state.TunnelInterfaceIndex != 0 &&
                 state.KillSwitchActive && !state.KillSwitchIncomplete && !state.FirewallProtectionOff;
         }
 
         private void PostMonitoringUpdate(bool stateRefreshed)
         {
+            PostMonitoringUpdate(stateRefreshed, Interlocked.Read(ref monitoringEpoch));
+        }
+
+        private void PostMonitoringUpdate(bool stateRefreshed, long expectedEpoch)
+        {
             if (!monitoringEnabled || monitoringStopped || IsDisposed || Disposing ||
-                !IsHandleCreated) return;
-            if (stateRefreshed)
+                monitoringPausedForAction || IsActionRunning || !IsHandleCreated) return;
+            if (stateRefreshed && IsMonitoringCycleCurrent(expectedEpoch))
+            {
+                Interlocked.Exchange(ref monitoringStateUiRefreshEpoch, expectedEpoch);
                 Interlocked.Exchange(ref monitoringStateUiRefreshRequested, 1);
+            }
             if (Interlocked.CompareExchange(ref monitoringUiUpdatePending, 1, 0) != 0) return;
             try
             {
@@ -3682,8 +4665,10 @@ namespace SwitzerlandVpn
                     bool refreshStateUi = Interlocked.Exchange(
                         ref monitoringStateUiRefreshRequested,
                         0) != 0;
-                    if (!monitoringEnabled || monitoringStopped || IsDisposed || Disposing) return;
-                    if (refreshStateUi && !IsActionRunning) ApplyMonitoredState();
+                    long refreshEpoch = Interlocked.Read(ref monitoringStateUiRefreshEpoch);
+                    if (!monitoringEnabled || monitoringStopped || monitoringPausedForAction ||
+                        IsActionRunning || IsDisposed || Disposing) return;
+                    if (refreshStateUi && IsMonitoringCycleCurrent(refreshEpoch)) ApplyMonitoredState();
                     RefreshTelemetryLabel();
                 }));
             }
@@ -3712,20 +4697,39 @@ namespace SwitzerlandVpn
                 !state.KillSwitchIncomplete && !state.FirewallProtectionOff;
             SetTelemetryDisplay(
                 protectedState
-                    ? "PROTECTED | PING -- | TRAFFIC DOWN -- / UP --"
-                    : "NOT PROTECTED | PING OFF | TRAFFIC DOWN -- / UP --",
+                    ? "PROTECTED | LATENCY -- | D -- / U -- Mbps"
+                    : "NOT PROTECTED | LATENCY OFF | D -- / U -- Mbps",
                 protectedState
                     ? Color.FromArgb(244, 196, 75)
+                    : Color.FromArgb(239, 75, 79));
+            SetLeakDisplay(
+                protectedState
+                    ? "ROUTE: VPN TUNNEL | IPv4: REACHABLE | IPv6: NO RESPONSE"
+                    : "ROUTE CHECK: FULL PROTECTION REQUIRED",
+                protectedState
+                    ? Color.FromArgb(57, 206, 136)
+                    : Color.FromArgb(239, 75, 79),
+                protectedState
+                    ? "IP LEAK CHECK: NO LEAK SIGNALS"
+                    : "IP LEAK CHECK: PAUSED",
+                protectedState
+                    ? Color.FromArgb(57, 206, 136)
                     : Color.FromArgb(239, 75, 79));
         }
 
         private void RefreshTelemetryLabel()
         {
             if (previewState != null) return;
+            if (monitoringPausedForAction || IsActionRunning) return;
             if (!monitoringEnabled)
             {
                 SetTelemetryDisplay(
                     "MONITOR OFF | CLICK LIVE MONITOR TO START",
+                    Color.FromArgb(132, 139, 151));
+                SetLeakDisplay(
+                    "ROUTE CHECK OFF",
+                    Color.FromArgb(132, 139, 151),
+                    "IP LEAK CHECK OFF",
                     Color.FromArgb(132, 139, 151));
                 return;
             }
@@ -3741,6 +4745,7 @@ namespace SwitzerlandVpn
             bool pingSucceeded;
             long pingMilliseconds;
             DateTime pingObservedUtc;
+            LeakMonitorSnapshot leakSnapshot;
             lock (monitoringSync)
             {
                 state = monitoredState;
@@ -3754,41 +4759,111 @@ namespace SwitzerlandVpn
                 pingSucceeded = monitoredPingSucceeded;
                 pingMilliseconds = monitoredPingMilliseconds;
                 pingObservedUtc = monitoredPingObservedUtc;
+                leakSnapshot = leakMonitorSnapshot;
             }
 
             DateTime now = DateTime.UtcNow;
             bool stateFresh = now - stateObservedUtc <= ProtectionFreshnessWindow;
             bool connectionFresh = connectionVerified &&
-                now - connectionObservedUtc <= TimeSpan.FromSeconds(1);
+                now - connectionObservedUtc <= ConnectionFreshnessWindow;
+            bool protectedStatusStale = IsFullyProtected(state) && !connectionFresh;
+            if (!stateFresh || state == null || protectedStatusStale)
+            {
+                ApplyControlState(null);
+                bool firstObservationPending = state == null || stateObservedUtc == DateTime.MinValue;
+                ApplyStatus(
+                    firstObservationPending
+                        ? Color.FromArgb(84, 150, 235)
+                        : Color.FromArgb(239, 75, 79),
+                    firstObservationPending ? "CHECKING STATUS" : "STATUS CHECK DELAYED",
+                    firstObservationPending
+                        ? "Reading VPN and kill-switch protection..."
+                        : "Live protection status is stale. Click REFRESH.",
+                    firstObservationPending ? "Checking status" : "Status check delayed");
+            }
+            else
+            {
+                bool stateUnavailable = state.ConnectionAmbiguous || !string.IsNullOrEmpty(state.Error);
+                ApplyControlState(stateUnavailable ? null : state);
+                bool tunnelIdentityUnavailable = string.IsNullOrEmpty(state.Error) &&
+                    !state.ConnectionAmbiguous && state.Connected && state.KillSwitchActive &&
+                    !state.KillSwitchIncomplete && !state.FirewallProtectionOff &&
+                    state.TunnelInterfaceIndex == 0;
+                bool exposureSignal = leakSnapshot != null &&
+                    leakSnapshot.State == LeakCheckState.ExposureDetected;
+                if (exposureSignal)
+                {
+                    ApplyStatus(
+                        Color.FromArgb(239, 75, 79),
+                        "EXPOSURE SIGNAL DETECTED",
+                        "The live route or IP check needs attention.",
+                        "Exposure signal detected");
+                }
+                else if (tunnelIdentityUnavailable)
+                {
+                    ApplyStatus(
+                        Color.FromArgb(244, 178, 65),
+                        "LIVE VERIFY UNAVAILABLE",
+                        "VPN is connected, but its tunnel route could not be verified.",
+                        "Live verification unavailable");
+                }
+                else
+                {
+                    ApplyDisplayState(
+                        state.ConnectionAmbiguous
+                            ? WidgetDisplayState.Unavailable
+                            : GetDisplayState(state),
+                        state);
+                }
+            }
             if (!stateFresh || state == null || !IsFullyProtected(state) || !connectionFresh)
             {
                 string reason;
                 if (!stateFresh || state == null)
-                    reason = "CHECKING";
+                    reason = state == null ? "CHECKING" : "STATUS STALE";
+                else if (!string.IsNullOrEmpty(state.Error))
+                    reason = "STATUS UNAVAILABLE";
                 else if (state.ConnectionAmbiguous)
                     reason = "RAS AMBIGUOUS";
                 else if (!state.Connected)
                     reason = "VPN OFF";
+                else if (state.KillSwitchActive && !state.KillSwitchIncomplete &&
+                    !state.FirewallProtectionOff && state.TunnelInterfaceIndex == 0)
+                    reason = "TUNNEL ID UNAVAILABLE";
                 else if (!IsFullyProtected(state))
                     reason = "VPN NOT PROTECTED";
                 else
                     reason = "VERIFYING VPN";
                 SetTelemetryDisplay(
-                    reason + " | PING OFF | TRAFFIC DOWN -- / UP --",
+                    reason + " | LATENCY OFF | D -- / U -- Mbps",
                     Color.FromArgb(239, 75, 79));
+                RefreshLeakDisplay(leakSnapshot, false);
                 return;
             }
 
             string traffic = trafficReady
-                ? string.Format("TRAFFIC D {0:0.00} / U {1:0.00} Mbps", downloadMbps, uploadMbps)
-                : "TRAFFIC WARMING UP";
+                ? "D " + FormatMegabitsPerSecond(downloadMbps) + " / U " +
+                    FormatMegabitsPerSecond(uploadMbps) + " Mbps"
+                : "D -- / U -- Mbps";
             bool pingFresh = pingAvailable && now - pingObservedUtc <= PingFreshnessWindow;
+            if (leakSnapshot != null && leakSnapshot.State == LeakCheckState.ExposureDetected)
+            {
+                string exposurePing = pingFresh && pingSucceeded
+                    ? string.Format("LAT {0} ms", pingMilliseconds)
+                    : pingFresh ? "LAT TIMEOUT" : "LAT --";
+                SetTelemetryDisplay(
+                    "EXPOSURE | " + exposurePing + " | " + traffic,
+                    Color.FromArgb(239, 75, 79));
+                RefreshLeakDisplay(leakSnapshot, true);
+                return;
+            }
             if (!pingFresh || !pingSucceeded)
             {
-                string pingText = pingFresh ? "PING TIMEOUT" : "PING --";
+                string pingText = pingFresh ? "LATENCY TIMEOUT" : "LATENCY --";
                 SetTelemetryDisplay(
                     "PROTECTED | " + pingText + " | " + traffic,
                     Color.FromArgb(244, 178, 65));
+                RefreshLeakDisplay(leakSnapshot, true);
                 return;
             }
 
@@ -3800,8 +4875,95 @@ namespace SwitzerlandVpn
                         ? Color.FromArgb(244, 178, 65)
                         : Color.FromArgb(239, 75, 79);
             SetTelemetryDisplay(
-                string.Format("PROTECTED | {0} ms | {1}", pingMilliseconds, traffic),
+                string.Format("PROTECTED | LATENCY {0} ms | {1}", pingMilliseconds, traffic),
                 telemetryColor);
+            RefreshLeakDisplay(leakSnapshot, true);
+        }
+
+        private static string FormatMegabitsPerSecond(double value)
+        {
+            if (double.IsNaN(value) || double.IsInfinity(value) || value < 0) return "--";
+            if (value >= 9999.5) return "9999+";
+            return value >= 1000
+                ? value.ToString("0.0", CultureInfo.InvariantCulture)
+                : value.ToString("0.00", CultureInfo.InvariantCulture);
+        }
+
+        private void RefreshLeakDisplay(LeakMonitorSnapshot snapshot, bool fullyProtected)
+        {
+            if (!fullyProtected || snapshot == null ||
+                snapshot.State == LeakCheckState.WaitingForProtection)
+            {
+                SetLeakDisplay(
+                    "ROUTE CHECK: FULL PROTECTION REQUIRED",
+                    Color.FromArgb(239, 75, 79),
+                    "IP LEAK CHECK: PAUSED",
+                    Color.FromArgb(239, 75, 79));
+                return;
+            }
+
+            switch (snapshot.State)
+            {
+                case LeakCheckState.Checking:
+                    SetLeakDisplay(
+                        "ROUTE: CHECKING | IPv4: CHECKING | IPv6: CHECKING",
+                        Color.FromArgb(84, 150, 235),
+                        "IP LEAK CHECK: CHECKING",
+                        Color.FromArgb(84, 150, 235));
+                    return;
+                case LeakCheckState.NoLeakSignals:
+                    SetLeakDisplay(
+                        "ROUTE: VPN TUNNEL | IPv4: REACHABLE | IPv6: NO RESPONSE",
+                        Color.FromArgb(57, 206, 136),
+                        "IP LEAK CHECK: NO LEAK SIGNALS",
+                        Color.FromArgb(57, 206, 136));
+                    return;
+                case LeakCheckState.ExposureDetected:
+                    string route = snapshot.RouteState == ManagedRouteState.BypassRoute
+                        ? "BYPASS SIGNAL"
+                        : snapshot.RouteState == ManagedRouteState.ViaManagedTunnel
+                            ? "VPN TUNNEL"
+                            : "UNAVAILABLE";
+                    string ipv6 = snapshot.Ipv6ResponseReceived
+                        ? "EXPOSED"
+                        : "NO RESPONSE";
+                    SetLeakDisplay(
+                        "ROUTE: " + route + " | IPv4: " +
+                            (snapshot.Ipv4ResponseReceived ? "RESPONDED" : "NO RESPONSE") +
+                            " | IPv6: " + ipv6,
+                        Color.FromArgb(239, 75, 79),
+                        "IP LEAK CHECK: EXPOSURE SIGNAL DETECTED",
+                        Color.FromArgb(239, 75, 79));
+                    return;
+                case LeakCheckState.CheckIncomplete:
+                    SetLeakDisplay(
+                        "ROUTE: INCOMPLETE | IPv4: " + GetProbeStatusText(snapshot.Ipv4Status) +
+                            " | IPv6: " + GetProbeStatusText(snapshot.Ipv6Status),
+                        Color.FromArgb(244, 178, 65),
+                        "IP LEAK CHECK: INCOMPLETE - RETRYING",
+                        Color.FromArgb(244, 178, 65));
+                    return;
+                default:
+                    SetLeakDisplay(
+                        "ROUTE CHECK OFF",
+                        Color.FromArgb(132, 139, 151),
+                        "IP LEAK CHECK OFF",
+                        Color.FromArgb(132, 139, 151));
+                    return;
+            }
+        }
+
+        private static string GetProbeStatusText(PublicAddressProbeStatus status)
+        {
+            switch (status)
+            {
+                case PublicAddressProbeStatus.Success: return "REACHABLE";
+                case PublicAddressProbeStatus.Timeout: return "TIMEOUT";
+                case PublicAddressProbeStatus.Cancelled: return "CANCELLED";
+                case PublicAddressProbeStatus.InvalidResponse: return "INVALID";
+                case PublicAddressProbeStatus.Unavailable: return "N/A";
+                default: return "NOT RUN";
+            }
         }
 
         /// <summary>
@@ -3814,6 +4976,22 @@ namespace SwitzerlandVpn
                 telemetryLabel.Text = text;
             if (telemetryLabel.ForeColor.ToArgb() != color.ToArgb())
                 telemetryLabel.ForeColor = color;
+        }
+
+        private void SetLeakDisplay(
+            string routeText,
+            Color routeColor,
+            string leakText,
+            Color leakColor)
+        {
+            if (!string.Equals(routeLabel.Text, routeText, StringComparison.Ordinal))
+                routeLabel.Text = routeText;
+            if (routeLabel.ForeColor.ToArgb() != routeColor.ToArgb())
+                routeLabel.ForeColor = routeColor;
+            if (!string.Equals(leakLabel.Text, leakText, StringComparison.Ordinal))
+                leakLabel.Text = leakText;
+            if (leakLabel.ForeColor.ToArgb() != leakColor.ToArgb())
+                leakLabel.ForeColor = leakColor;
         }
 
         private static WidgetDisplayState GetDisplayState(WidgetState state)
@@ -3909,7 +5087,18 @@ namespace SwitzerlandVpn
             statusLabel.Text = status;
             statusLabel.ForeColor = Color.WhiteSmoke;
             detailLabel.Text = detail;
-            string tip = "Switzerland VPN - " + trayStatus;
+            lastTrayStatus = trayStatus;
+            UpdateTrayToolTip();
+        }
+
+        /// <summary>
+        /// Keeps the tray hover text useful while staying under the legacy Windows notification-icon
+        /// text limit. The monitor state is included because it controls every live network probe.
+        /// </summary>
+        private void UpdateTrayToolTip()
+        {
+            string tip = "Switzerland VPN | MON: " + (monitoringEnabled ? "ON" : "OFF") +
+                " | " + lastTrayStatus;
             trayIcon.Text = tip.Length > 63 ? tip.Substring(0, 63) : tip;
         }
 
@@ -3949,6 +5138,8 @@ namespace SwitzerlandVpn
             {
                 monitoringStopped = true;
                 monitoringEnabled = false;
+                monitoringPausedForAction = true;
+                CancelLeakProbe();
                 timer.Stop();
                 trayIcon.Visible = false;
                 trayIcon.Dispose();
@@ -3966,26 +5157,10 @@ namespace SwitzerlandVpn
                 return;
             }
 
-            string warningMessage = "Exit Switzerland VPN? The tray icon and status monitoring will stop.";
+            string warningMessage;
             try
             {
-                WidgetState state = ReadState();
-                if (state.FirewallProtectionOff && state.ManagedRulesPresent)
-                {
-                    warningMessage =
-                        "WARNING: Saved kill-switch rules remain while Windows Firewall is off. They may block internet " +
-                        "when Firewall is turned back on. Exit anyway?";
-                }
-                else if (state.KillSwitchActive || state.KillSwitchIncomplete)
-                {
-                    warningMessage =
-                        "WARNING: The kill switch is armed. If this app exits, the kill switch will remain active and internet may stay blocked. Exit anyway?";
-                }
-                else if (state.Connected)
-                {
-                    warningMessage =
-                        "Switzerland VPN is connected. Closing this app will not disconnect the VPN. Exit anyway?";
-                }
+                warningMessage = GetExitWarningMessage(ReadState());
             }
             catch
             {
@@ -3993,23 +5168,51 @@ namespace SwitzerlandVpn
                     "VPN and kill-switch status could not be verified. Exit Switzerland VPN anyway?";
             }
 
-            DialogResult answer = MessageBox.Show(
-                warningMessage,
-                "Exit Switzerland VPN?",
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Warning,
-                MessageBoxDefaultButton.Button2);
-            if (answer != DialogResult.Yes)
+            if (!string.IsNullOrEmpty(warningMessage))
             {
-                e.Cancel = true;
-                return;
+                DialogResult answer = MessageBox.Show(
+                    warningMessage,
+                    "Exit Switzerland VPN?",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning,
+                    MessageBoxDefaultButton.Button2);
+                if (answer != DialogResult.Yes)
+                {
+                    e.Cancel = true;
+                    return;
+                }
             }
 
             monitoringStopped = true;
             monitoringEnabled = false;
+            monitoringPausedForAction = true;
+            CancelLeakProbe();
             timer.Stop();
             trayIcon.Visible = false;
             trayIcon.Dispose();
+        }
+
+        /// <summary>
+        /// Returns an exit warning only when closing could leave a tunnel or traffic protection active,
+        /// or when Windows cannot prove both are off. A verified disconnected and disarmed state exits silently.
+        /// </summary>
+        private static string GetExitWarningMessage(WidgetState state)
+        {
+            if (state == null || !string.IsNullOrEmpty(state.Error) || state.ConnectionAmbiguous)
+                return "VPN and kill-switch status could not be verified. Exit Switzerland VPN anyway?";
+            if (state.FirewallProtectionOff && state.ManagedRulesPresent)
+            {
+                return "WARNING: Saved kill-switch rules remain while Windows Firewall is off. They may block internet " +
+                    "when Firewall is turned back on. Exit anyway?";
+            }
+            if (state.KillSwitchActive || state.KillSwitchIncomplete)
+            {
+                return "WARNING: The kill switch is armed or incomplete. If this app exits, internet may stay blocked. " +
+                    "Exit anyway?";
+            }
+            if (state.Connected)
+                return "Switzerland VPN is connected. Closing this app will not disconnect the VPN. Exit anyway?";
+            return null;
         }
     }
 

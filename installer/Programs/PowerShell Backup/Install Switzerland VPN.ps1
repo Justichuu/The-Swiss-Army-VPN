@@ -10,7 +10,7 @@ Add-Type -AssemblyName System.Windows.Forms
 
 $vpnName = 'Switzerland VPN'
 $ruleGroup = 'Switzerland VPN Kill Switch'
-$installVersion = '1.1.1'
+$installVersion = '1.1.2'
 $installParent = $null
 $installDir = $null
 $validatedInstallTarget = $null
@@ -1298,12 +1298,12 @@ try {
         catch {
             throw 'The existing installation version record is damaged. Nothing was changed.'
         }
-        if (@('1.0.9', '1.1.0') -cnotcontains $recordedVersion) {
+        if (@('1.0.9', '1.1.0', '1.1.1') -cnotcontains $recordedVersion) {
             throw "The installed version $recordedVersion cannot be upgraded by this package. Nothing was changed."
         }
         $managedUpgradeContext = Get-ValidatedManagedUpgradeContext `
             -ExpectedVersion $recordedVersion `
-            -RequireUpdateHelper:($recordedVersion -eq '1.1.0')
+            -RequireUpdateHelper:($recordedVersion -in @('1.1.0', '1.1.1'))
     }
     if ((Test-Path -LiteralPath $installDir) -and -not $existingFolderIsManaged) {
         $items = @(Get-ChildItem -LiteralPath $installDir -Force -ErrorAction SilentlyContinue)
