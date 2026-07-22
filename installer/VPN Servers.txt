@@ -1,0 +1,14 @@
+# Seed Swiss IKEv2 server pool. The server switcher refreshes the full live list
+# from NordVPN before choosing a server; these entries are offline fallbacks.
+ch502.nordvpn.com
+ch343.nordvpn.com
+ch380.nordvpn.com
+ch344.nordvpn.com
+ch475.nordvpn.com
+ch498.nordvpn.com
+ch500.nordvpn.com
+ch501.nordvpn.com
+ch334.nordvpn.com
+ch337.nordvpn.com
+ch339.nordvpn.com
+ch342.nordvpn.com

@@ -2,7 +2,7 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '1.1.2',
+    [string]$Version = '1.2.0',
 
     [string]$OutputDirectory = ''
 )
@@ -196,7 +196,7 @@ try {
     foreach ($name in @('src', 'assets', 'installer', 'scripts')) {
         Copy-Item -LiteralPath (Join-Path $repositoryRoot $name) -Destination $sourceStage -Recurse -Force
     }
-    foreach ($name in @('README.md', 'SECURITY.md', 'LICENSE', '.gitattributes', '.gitignore')) {
+    foreach ($name in @('README.md', 'ROADMAP.md', 'SECURITY.md', 'LICENSE', '.gitattributes', '.gitignore')) {
         Copy-Item -LiteralPath (Join-Path $repositoryRoot $name) -Destination $sourceStage -Force
     }
 
