@@ -310,8 +310,8 @@ function Remove-VerifiedShortcutSet {
         [pscustomobject]@{ Path = (Join-Path $startFolder 'Switzerland VPN.lnk'); Target = $appPath; Arguments = '' }
         [pscustomobject]@{
             Path = Join-Path $startFolder 'Emergency Unlock.lnk'
-            Target = $powershellPath
-            Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $installDir 'Emergency Unlock.ps1')`""
+            Target = Join-Path $installDir 'Emergency Unlock.exe'
+            Arguments = ''
         }
         [pscustomobject]@{
             Path = Join-Path $startFolder 'Choose Swiss VPN Server.lnk'
