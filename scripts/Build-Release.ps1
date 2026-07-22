@@ -2,7 +2,7 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '1.1.1',
+    [string]$Version = '1.1.2',
 
     [string]$OutputDirectory = ''
 )
@@ -93,9 +93,18 @@ foreach ($requiredFile in @(
 
 $escapedVersion = [regex]::Escape($Version)
 $expectedAssemblyVersion = $Version + '.0'
-if ((Get-Content -LiteralPath $sourceCode -Raw) -notmatch
+$sourceText = Get-Content -LiteralPath $sourceCode -Raw
+if ($sourceText -notmatch
+    ('AssemblyVersion\("' + [regex]::Escape($expectedAssemblyVersion) + '"\)')) {
+    throw "Source assembly identity does not match build version $Version."
+}
+if ($sourceText -notmatch
     ('AssemblyFileVersion\("' + [regex]::Escape($expectedAssemblyVersion) + '"\)')) {
     throw "Source assembly version does not match build version $Version."
+}
+if ($sourceText -notmatch
+    ('CurrentVersion\s*=\s*"' + $escapedVersion + '"')) {
+    throw "Application runtime version does not match build version $Version."
 }
 if ((Get-Content -LiteralPath $manifest -Raw) -notmatch
     ('assemblyIdentity version="' + [regex]::Escape($expectedAssemblyVersion) + '"')) {
@@ -129,6 +138,7 @@ try {
         "/win32manifest:$manifest" `
         "/win32icon:$icon" `
         /reference:System.Drawing.dll `
+        /reference:System.Net.Http.dll `
         /reference:System.Windows.Forms.dll `
         /reference:System.ServiceProcess.dll `
         "/out:$executable" `

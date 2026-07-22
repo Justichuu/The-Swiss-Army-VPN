@@ -24,7 +24,7 @@ jobs:
       - name: Build and validate release files
         shell: pwsh
         run: |
-          $version = '1.1.1'
+          $version = '1.1.2'
           if ($env:GITHUB_REF_TYPE -eq 'tag') {
             $version = $env:GITHUB_REF_NAME.TrimStart('v')
           }
