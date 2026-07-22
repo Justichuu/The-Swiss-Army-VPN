@@ -83,26 +83,40 @@ jobs:
             throw 'GitHub did not upload every release asset. The release remains a draft.'
           }
 
+          # GitHub's release-by-tag endpoint excludes drafts. List drafts and
+          # select the one exact tag created above instead.
           $draftJson = gh api `
-            "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:GITHUB_REF_NAME"
+            "repos/$env:GITHUB_REPOSITORY/releases?per_page=100"
           if ($LASTEXITCODE -ne 0) {
             throw 'GitHub could not return the draft release for verification.'
           }
-          $draft = $draftJson | ConvertFrom-Json
-          if (-not $draft.draft) {
-            throw 'The release was not a draft during pre-publish verification.'
+          $drafts = @(($draftJson | ConvertFrom-Json) | Where-Object {
+              $_.draft -and
+              [string]::Equals($_.tag_name, $env:GITHUB_REF_NAME, [StringComparison]::Ordinal)
+            })
+          if ($drafts.Count -ne 1) {
+            throw "Expected one exact draft release, found $($drafts.Count)."
           }
+          $draft = $drafts[0]
           $remoteAssets = @($draft.assets)
           if ($remoteAssets.Count -ne $assetFiles.Count) {
             throw "The draft contains $($remoteAssets.Count) assets; expected $($assetFiles.Count)."
           }
           foreach ($assetFile in $assetFiles) {
+            # GitHub normalizes spaces in release asset names to periods.
+            $expectedRemoteName = $assetFile.Name.Replace(' ', '.')
             $matchingRemoteAssets = @($remoteAssets | Where-Object {
-                [string]::Equals($_.name, $assetFile.Name, [StringComparison]::Ordinal)
+                [string]::Equals($_.name, $expectedRemoteName, [StringComparison]::Ordinal)
               })
+            $expectedDigest = 'sha256:' + (Get-FileHash -LiteralPath $assetFile.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
             if ($matchingRemoteAssets.Count -ne 1 -or
-                [long]$matchingRemoteAssets[0].size -ne [long]$assetFile.Length) {
-              throw "The uploaded asset failed exact name and size verification: $($assetFile.Name)"
+                [long]$matchingRemoteAssets[0].size -ne [long]$assetFile.Length -or
+                -not [string]::Equals(
+                  [string]$matchingRemoteAssets[0].digest,
+                  $expectedDigest,
+                  [StringComparison]::OrdinalIgnoreCase
+                )) {
+              throw "The uploaded asset failed exact name, size, and digest verification: $($assetFile.Name)"
             }
           }
 
