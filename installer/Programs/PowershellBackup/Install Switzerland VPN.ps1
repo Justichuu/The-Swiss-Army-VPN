@@ -13,7 +13,7 @@ $ruleGroup = 'Switzerland VPN Kill Switch'
 $publisher = 'Justichuu'
 # The project handle changed because I got bored; accept the old publisher only while upgrading.
 $legacyPublisher = 'Jaye'
-$installVersion = '1.3.2'
+$installVersion = '1.3.3'
 $installParent = $null
 $installDir = $null
 $validatedInstallTarget = $null
@@ -899,6 +899,125 @@ function Get-ManagedInstallParentHint {
     }
 }
 
+function Get-ExpectedManagedInstallFileNames {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ExpectedVersion,
+
+        [switch]$RequireUpdateHelper
+    )
+
+    $requiredFiles = @(
+        'Switzerland VPN.exe'
+        'Switzerland VPN.ico'
+        'Switzerland VPN.png'
+        'Switzerland VPN Background.png'
+        'Uninstall Switzerland VPN.ps1'
+        'Emergency Unlock.ps1'
+        'VPN Server.txt'
+        $ownershipFileName
+    )
+    if ([version]$ExpectedVersion -ge [version]'1.2.0') {
+        $requiredFiles += 'Switch Switzerland VPN Server.ps1', 'VPN Servers.txt'
+    }
+    if ([version]$ExpectedVersion -ge [version]'1.3.1') {
+        $requiredFiles += 'Emergency Unlock.exe'
+    }
+    if ($RequireUpdateHelper) {
+        $requiredFiles += 'Update Switzerland VPN.ps1'
+    }
+
+    return $requiredFiles
+}
+
+function Assert-ManagedInstallFileLayout {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Directory,
+
+        [Parameter(Mandatory)]
+        [string]$ExpectedVersion,
+
+        [switch]$RequireUpdateHelper,
+
+        [Parameter(Mandatory)]
+        [string]$FailureMessage
+    )
+
+    $requiredFiles = @(
+        Get-ExpectedManagedInstallFileNames `
+            -ExpectedVersion $ExpectedVersion `
+            -RequireUpdateHelper:$RequireUpdateHelper
+    )
+    $allowed = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($name in $requiredFiles) {
+        [void]$allowed.Add($name)
+    }
+
+    $items = @(Get-ChildItem -LiteralPath $Directory -Force)
+    if ($items.Count -ne $requiredFiles.Count) {
+        throw $FailureMessage
+    }
+    foreach ($item in $items) {
+        if ($item.PSIsContainer -or
+            ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+            -not $allowed.Contains($item.Name)) {
+            throw "$FailureMessage Unexpected item: $($item.Name)."
+        }
+    }
+}
+
+function New-ManagedInstallPayloadStage {
+    param(
+        [Parameter(Mandatory)]
+        [string]$DestinationDirectory,
+
+        [Parameter(Mandatory)]
+        [string]$SourceServerPath,
+
+        [Parameter(Mandatory)]
+        [string]$InstallId,
+
+        [Parameter(Mandatory)]
+        [string]$InstallDirectory
+    )
+
+    foreach ($name in @(
+        'Emergency Unlock.exe', 'Switzerland VPN.exe', 'Switzerland VPN.ico', 'Switzerland VPN.png',
+        'Switzerland VPN Background.png'
+    )) {
+        Copy-AndVerifyUpgradeFile `
+            -Source (Join-Path $payloadDir $name) `
+            -Destination (Join-Path $DestinationDirectory $name)
+    }
+    foreach ($name in @(
+        'Update Switzerland VPN.ps1', 'Uninstall Switzerland VPN.ps1',
+        'Emergency Unlock.ps1', 'Switch Switzerland VPN Server.ps1'
+    )) {
+        Copy-AndVerifyUpgradeFile `
+            -Source (Join-Path $powershellBackupDir $name) `
+            -Destination (Join-Path $DestinationDirectory $name)
+    }
+    Copy-AndVerifyUpgradeFile `
+        -Source $SourceServerPath `
+        -Destination (Join-Path $DestinationDirectory 'VPN Server.txt')
+    Copy-AndVerifyUpgradeFile `
+        -Source $serverPoolFile `
+        -Destination (Join-Path $DestinationDirectory 'VPN Servers.txt')
+
+    $updatedMarker = [ordered]@{
+        ProductName = $vpnName
+        InstallId = $InstallId
+        InstallDirectory = $InstallDirectory
+        Version = $installVersion
+    }
+    [IO.File]::WriteAllText(
+        (Join-Path $DestinationDirectory $ownershipFileName),
+        ($updatedMarker | ConvertTo-Json),
+        [Text.UTF8Encoding]::new($false)
+    )
+}
+
 function Get-ValidatedManagedUpgradeContext {
     param(
         [Parameter(Mandatory)]
@@ -972,36 +1091,11 @@ function Get-ValidatedManagedUpgradeContext {
         throw 'The existing VPN server setting does not match its installation record. Nothing was changed.'
     }
 
-    $requiredFiles = @(
-        'Switzerland VPN.exe'
-        'Switzerland VPN.ico'
-        'Switzerland VPN.png'
-        'Switzerland VPN Background.png'
-        'Uninstall Switzerland VPN.ps1'
-        'Emergency Unlock.ps1'
-        'VPN Server.txt'
-        $ownershipFileName
-    )
-    if ([version]$ExpectedVersion -ge [version]'1.2.0') {
-        $requiredFiles += 'Switch Switzerland VPN Server.ps1', 'VPN Servers.txt'
-    }
-    if ([version]$ExpectedVersion -ge [version]'1.3.1') {
-        $requiredFiles += 'Emergency Unlock.exe'
-    }
-    if ($RequireUpdateHelper) { $requiredFiles += 'Update Switzerland VPN.ps1' }
-    $allowed = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-    foreach ($name in $requiredFiles) { [void]$allowed.Add($name) }
-    $items = @(Get-ChildItem -LiteralPath $installDir -Force)
-    if ($items.Count -ne $requiredFiles.Count) {
-        throw 'The existing application folder contains missing or unexpected files. Nothing was changed.'
-    }
-    foreach ($item in $items) {
-        if ($item.PSIsContainer -or
-            ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
-            -not $allowed.Contains($item.Name)) {
-            throw "The existing application folder contains an unexpected item: $($item.Name). Nothing was changed."
-        }
-    }
+    Assert-ManagedInstallFileLayout `
+        -Directory $installDir `
+        -ExpectedVersion $ExpectedVersion `
+        -RequireUpdateHelper:$RequireUpdateHelper `
+        -FailureMessage 'The existing application folder contains missing or unexpected files. Nothing was changed.'
 
     $appPath = Join-Path $installDir 'Switzerland VPN.exe'
     $versionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($appPath)
@@ -1157,37 +1251,22 @@ function Invoke-ManagedInstallUpgrade {
         Set-ProtectedApplicationDirectoryAcl -Path $transactionRoot
         New-Item -ItemType Directory -Path $newInstall | Out-Null
 
-        foreach ($name in @(
-            'Emergency Unlock.exe', 'Switzerland VPN.exe', 'Switzerland VPN.ico', 'Switzerland VPN.png',
-            'Switzerland VPN Background.png'
-        )) {
-            Copy-AndVerifyUpgradeFile -Source (Join-Path $payloadDir $name) -Destination (Join-Path $newInstall $name)
-        }
-        foreach ($name in @('Update Switzerland VPN.ps1', 'Uninstall Switzerland VPN.ps1', 'Emergency Unlock.ps1', 'Switch Switzerland VPN Server.ps1')) {
-            Copy-AndVerifyUpgradeFile -Source (Join-Path $powershellBackupDir $name) -Destination (Join-Path $newInstall $name)
-        }
-        Copy-AndVerifyUpgradeFile -Source (Join-Path $installDir 'VPN Server.txt') `
-            -Destination (Join-Path $newInstall 'VPN Server.txt')
-        Copy-AndVerifyUpgradeFile -Source $serverPoolFile -Destination (Join-Path $newInstall 'VPN Servers.txt')
-
-        $updatedMarker = [ordered]@{
-            ProductName = $vpnName
-            InstallId = $Context.InstallId
-            InstallDirectory = $installDir
-            Version = $installVersion
-        }
-        [IO.File]::WriteAllText(
-            (Join-Path $newInstall $ownershipFileName),
-            ($updatedMarker | ConvertTo-Json),
-            [Text.UTF8Encoding]::new($false)
-        )
+        New-ManagedInstallPayloadStage `
+            -DestinationDirectory $newInstall `
+            -SourceServerPath (Join-Path $installDir 'VPN Server.txt') `
+            -InstallId $Context.InstallId `
+            -InstallDirectory $installDir
         Set-ProtectedApplicationDirectoryAcl -Path $newInstall
 
         $newVersionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $newInstall 'Switzerland VPN.exe'))
-        if ($newVersionInfo.CompanyName -ne $publisher -or $newVersionInfo.FileVersion -ne ($installVersion + '.0') -or
-            @(Get-ChildItem -LiteralPath $newInstall -Force).Count -ne 10) {
-            throw 'The staged upgrade failed its publisher, version, or file-layout check.'
+        if ($newVersionInfo.CompanyName -ne $publisher -or $newVersionInfo.FileVersion -ne ($installVersion + '.0')) {
+            throw 'The staged upgrade failed its publisher or version check.'
         }
+        Assert-ManagedInstallFileLayout `
+            -Directory $newInstall `
+            -ExpectedVersion $installVersion `
+            -RequireUpdateHelper `
+            -FailureMessage 'The staged upgrade failed its file-layout check.'
 
         Copy-AndVerifyUpgradeFile -Source $statePath -Destination $stateBackup
         Set-ProtectedApplicationDirectoryAcl -Path $installDir
@@ -1356,6 +1435,33 @@ catch {
 }
 
 if ($ValidatePackageOnly) {
+    $upgradeValidationRoot = Join-Path ([IO.Path]::GetTempPath()) `
+        ('Switzerland-VPN-upgrade-layout-' + [guid]::NewGuid().ToString('N'))
+    try {
+        New-Item -ItemType Directory -Path $upgradeValidationRoot | Out-Null
+        New-ManagedInstallPayloadStage `
+            -DestinationDirectory $upgradeValidationRoot `
+            -SourceServerPath $serverFile `
+            -InstallId ([guid]::NewGuid().ToString('D')) `
+            -InstallDirectory $installDir
+        $upgradeVersionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo(
+            (Join-Path $upgradeValidationRoot 'Switzerland VPN.exe')
+        )
+        if ($upgradeVersionInfo.CompanyName -ne $publisher -or
+            $upgradeVersionInfo.FileVersion -ne ($installVersion + '.0')) {
+            throw 'The staged upgrade validation failed its publisher or version check.'
+        }
+        Assert-ManagedInstallFileLayout `
+            -Directory $upgradeValidationRoot `
+            -ExpectedVersion $installVersion `
+            -RequireUpdateHelper `
+            -FailureMessage 'The staged upgrade validation failed its file-layout check.'
+    }
+    finally {
+        if (Test-Path -LiteralPath $upgradeValidationRoot) {
+            Remove-Item -LiteralPath $upgradeValidationRoot -Recurse -Force
+        }
+    }
     Write-Host 'PACKAGE VALIDATION: PASS' -ForegroundColor Green
     Write-Host "Server: $serverAddress"
     Write-Host "Install target: $installDir"
@@ -1419,12 +1525,12 @@ try {
         catch {
             throw 'The existing installation version record is damaged. Nothing was changed.'
         }
-        if (@('1.0.9', '1.1.0', '1.1.1', '1.1.2', '1.2.0', '1.3.0', '1.3.1') -cnotcontains $recordedVersion) {
+        if (@('1.0.9', '1.1.0', '1.1.1', '1.1.2', '1.2.0', '1.3.0', '1.3.1', '1.3.2') -cnotcontains $recordedVersion) {
             throw "The installed version $recordedVersion cannot be upgraded by this package. Nothing was changed."
         }
         $managedUpgradeContext = Get-ValidatedManagedUpgradeContext `
             -ExpectedVersion $recordedVersion `
-            -RequireUpdateHelper:($recordedVersion -in @('1.1.0', '1.1.1', '1.1.2', '1.2.0', '1.3.0', '1.3.1'))
+            -RequireUpdateHelper:($recordedVersion -in @('1.1.0', '1.1.1', '1.1.2', '1.2.0', '1.3.0', '1.3.1', '1.3.2'))
     }
     if ((Test-Path -LiteralPath $installDir) -and -not $existingFolderIsManaged) {
         $items = @(Get-ChildItem -LiteralPath $installDir -Force -ErrorAction SilentlyContinue)
