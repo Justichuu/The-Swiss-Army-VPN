@@ -10,12 +10,14 @@ Add-Type -AssemblyName System.Windows.Forms
 
 $vpnName = 'Switzerland VPN'
 $ruleGroup = 'Switzerland VPN Kill Switch'
-$installVersion = '1.0.9'
+$installVersion = '1.1.0'
 $installParent = $null
 $installDir = $null
 $validatedInstallTarget = $null
 $stateDir = Join-Path $env:ProgramData 'Switzerland VPN'
 $statePath = Join-Path $stateDir 'install-state.json'
+$ownershipFileName = 'install-ownership.json'
+$uninstallKey = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Switzerland VPN Widget'
 $programsDir = Split-Path -Parent $PSScriptRoot
 $packageRoot = Split-Path -Parent $programsDir
 $payloadDir = Join-Path $programsDir 'Executables'
@@ -46,6 +48,205 @@ function Test-Administrator {
 
 function Get-ExactFullPath([string]$Path) {
     return [IO.Path]::GetFullPath($Path).TrimEnd('\')
+}
+
+function Get-TrustedDirectoryPrincipalSids {
+    $trustedSids = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($sid in @(
+        'S-1-5-18' # Local System
+        'S-1-5-32-544' # Built-in Administrators
+        'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464' # TrustedInstaller
+    )) {
+        [void]$trustedSids.Add($sid)
+    }
+    return ,$trustedSids
+}
+
+function Assert-DirectoryChainHasNoReparsePoints {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path
+    )
+
+    $fullPath = Get-ExactFullPath $Path
+    if (-not (Test-Path -LiteralPath $fullPath -PathType Container)) {
+        throw "The folder does not exist: $fullPath"
+    }
+
+    $current = [IO.DirectoryInfo]::new($fullPath)
+    while ($null -ne $current) {
+        $item = Get-Item -LiteralPath $current.FullName -Force -ErrorAction Stop
+        if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "The install location cannot use directory links or mount points: $($item.FullName)"
+        }
+        $current = $current.Parent
+    }
+}
+
+function Test-RuleGrantsDirectoryWrite {
+    param(
+        [Parameter(Mandatory)]
+        [Security.AccessControl.FileSystemAccessRule]$Rule
+    )
+
+    if ($Rule.AccessControlType -ne [Security.AccessControl.AccessControlType]::Allow) {
+        return $false
+    }
+    if (($Rule.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly) -ne 0 -and
+        $Rule.InheritanceFlags -eq [Security.AccessControl.InheritanceFlags]::None) {
+        return $false
+    }
+
+    # FileSystemRights can contain signed generic-access bits. Normalize it to
+    # an unsigned 32-bit value before testing every permission that permits a
+    # caller to create, alter, delete, or take control of directory contents.
+    $rights = [uint64]([int64][int32]$Rule.FileSystemRights -band 0xFFFFFFFFL)
+    $writeMask = [uint64]0
+    foreach ($right in @(
+        [Security.AccessControl.FileSystemRights]::Write
+        [Security.AccessControl.FileSystemRights]::Delete
+        [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles
+        [Security.AccessControl.FileSystemRights]::ChangePermissions
+        [Security.AccessControl.FileSystemRights]::TakeOwnership
+    )) {
+        $writeMask = $writeMask -bor [uint64]([int64][int32]$right -band 0xFFFFFFFFL)
+    }
+    $writeMask = $writeMask -bor 0x10000000L -bor 0x40000000L # GENERIC_ALL and GENERIC_WRITE
+
+    return (($rights -band $writeMask) -ne 0)
+}
+
+function Assert-InstallParentIsProtected {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path
+    )
+
+    $fullPath = Get-ExactFullPath $Path
+    Assert-DirectoryChainHasNoReparsePoints -Path $fullPath
+
+    $trustedSids = Get-TrustedDirectoryPrincipalSids
+    $security = [IO.Directory]::GetAccessControl(
+        $fullPath,
+        [Security.AccessControl.AccessControlSections]::Access -bor
+            [Security.AccessControl.AccessControlSections]::Owner
+    )
+    $rawDescriptor = [Security.AccessControl.RawSecurityDescriptor]::new(
+        $security.GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access)
+    )
+    if ($null -eq $rawDescriptor.DiscretionaryAcl) {
+        throw 'The selected install parent has an unsafe unrestricted access list.'
+    }
+
+    $ownerSid = $security.GetOwner([Security.Principal.SecurityIdentifier]).Value
+    if (-not $trustedSids.Contains($ownerSid)) {
+        $ownerIdentity = try {
+            ([Security.Principal.SecurityIdentifier]::new($ownerSid)).Translate(
+                [Security.Principal.NTAccount]
+            ).Value
+        }
+        catch {
+            $ownerSid
+        }
+        throw "The selected install parent is controlled by an untrusted owner: $ownerIdentity"
+    }
+
+    $rules = $security.GetAccessRules(
+        $true,
+        $true,
+        [Security.Principal.SecurityIdentifier]
+    )
+    foreach ($rule in $rules) {
+        $sid = $rule.IdentityReference.Value
+        $isSafeCreatorOwnerRule = (
+            $sid -eq 'S-1-3-0' -and
+            ($rule.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly) -ne 0
+        )
+        if (-not $trustedSids.Contains($sid) -and
+            -not $isSafeCreatorOwnerRule -and
+            (Test-RuleGrantsDirectoryWrite -Rule $rule)) {
+            $identity = try {
+                $rule.IdentityReference.Translate([Security.Principal.NTAccount]).Value
+            }
+            catch {
+                $sid
+            }
+            throw "The selected install parent is writable by an untrusted account: $identity"
+        }
+    }
+}
+
+function Set-ProtectedApplicationDirectoryAcl {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path
+    )
+
+    $fullPath = Get-ExactFullPath $Path
+    if (-not (Test-Path -LiteralPath $fullPath -PathType Container)) {
+        throw "Windows did not create the protected application folder: $fullPath"
+    }
+    Assert-DirectoryChainHasNoReparsePoints -Path $fullPath
+
+    $systemSid = [Security.Principal.SecurityIdentifier]::new('S-1-5-18')
+    $administratorsSid = [Security.Principal.SecurityIdentifier]::new('S-1-5-32-544')
+    $usersSid = [Security.Principal.SecurityIdentifier]::new('S-1-5-32-545')
+    $inheritance = [Security.AccessControl.InheritanceFlags]::ContainerInherit -bor
+        [Security.AccessControl.InheritanceFlags]::ObjectInherit
+    $propagation = [Security.AccessControl.PropagationFlags]::None
+    $allow = [Security.AccessControl.AccessControlType]::Allow
+
+    $security = [Security.AccessControl.DirectorySecurity]::new()
+    $security.SetAccessRuleProtection($true, $false)
+    $security.SetOwner($administratorsSid)
+
+    $expectedRules = [Collections.Generic.Dictionary[string, uint64]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($definition in @(
+        [pscustomobject]@{ Sid = $systemSid; Rights = [Security.AccessControl.FileSystemRights]::FullControl }
+        [pscustomobject]@{ Sid = $administratorsSid; Rights = [Security.AccessControl.FileSystemRights]::FullControl }
+        [pscustomobject]@{ Sid = $usersSid; Rights = [Security.AccessControl.FileSystemRights]::ReadAndExecute }
+    )) {
+        $rule = [Security.AccessControl.FileSystemAccessRule]::new(
+            $definition.Sid,
+            $definition.Rights,
+            $inheritance,
+            $propagation,
+            $allow
+        )
+        [void]$security.AddAccessRule($rule)
+        $expectedRules.Add(
+            $definition.Sid.Value,
+            [uint64]([int64][int32]$rule.FileSystemRights -band 0xFFFFFFFFL)
+        )
+    }
+
+    [IO.Directory]::SetAccessControl($fullPath, $security)
+
+    $verified = [IO.Directory]::GetAccessControl(
+        $fullPath,
+        [Security.AccessControl.AccessControlSections]::Access -bor
+            [Security.AccessControl.AccessControlSections]::Owner
+    )
+    if (-not $verified.AreAccessRulesProtected -or
+        $verified.GetOwner([Security.Principal.SecurityIdentifier]).Value -ne $administratorsSid.Value) {
+        throw "Windows did not protect the permissions on: $fullPath"
+    }
+
+    $actualRules = @($verified.GetAccessRules($true, $false, [Security.Principal.SecurityIdentifier]))
+    if ($actualRules.Count -ne $expectedRules.Count) {
+        throw "Windows retained unexpected permissions on: $fullPath"
+    }
+    foreach ($rule in $actualRules) {
+        $sid = $rule.IdentityReference.Value
+        $rights = [uint64]([int64][int32]$rule.FileSystemRights -band 0xFFFFFFFFL)
+        if (-not $expectedRules.ContainsKey($sid) -or
+            $rights -ne $expectedRules[$sid] -or
+            $rule.AccessControlType -ne $allow -or
+            $rule.InheritanceFlags -ne $inheritance -or
+            $rule.PropagationFlags -ne $propagation) {
+            throw "Windows retained unexpected permissions on: $fullPath"
+        }
+    }
 }
 
 function Get-ValidatedInstallParent {
@@ -151,7 +352,12 @@ function Assert-PackageFiles {
         }
     }
 
-    foreach ($name in @('Install Switzerland VPN.ps1', 'Uninstall Switzerland VPN.ps1', 'Emergency Unlock.ps1')) {
+    foreach ($name in @(
+        'Install Switzerland VPN.ps1'
+        'Update Switzerland VPN.ps1'
+        'Uninstall Switzerland VPN.ps1'
+        'Emergency Unlock.ps1'
+    )) {
         $path = Join-Path $powershellBackupDir $name
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
             throw "The package is incomplete. Missing: Programs\PowerShell Backup\$name"
@@ -621,13 +827,367 @@ function Start-AsInteractiveShellUser {
     }
 }
 
+function Get-ManagedInstallParentHint {
+    if (-not (Test-Path -LiteralPath $statePath -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $uninstallKey)) {
+        return $null
+    }
+
+    try {
+        $registration = Get-ItemProperty -LiteralPath $uninstallKey
+        $location = Get-ExactFullPath ([string]$registration.InstallLocation)
+        if (-not [string]::Equals([string]$registration.DisplayName, $vpnName, [StringComparison]::Ordinal) -or
+            -not [string]::Equals([string]$registration.Publisher, 'Jaye', [StringComparison]::Ordinal) -or
+            -not [string]::Equals([IO.Path]::GetFileName($location), $vpnName, [StringComparison]::Ordinal)) {
+            return $null
+        }
+        return Split-Path -Parent $location
+    }
+    catch {
+        return $null
+    }
+}
+
+function Get-ValidatedManagedUpgradeContext {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ExpectedVersion,
+
+        [switch]$RequireUpdateHelper
+    )
+
+    Assert-InstallParentIsProtected -Path $installParent
+    Assert-DirectoryChainHasNoReparsePoints -Path $installDir
+    Assert-InstallParentIsProtected -Path $installDir
+    Assert-DirectoryChainHasNoReparsePoints -Path $stateDir
+
+    foreach ($path in @($statePath, (Join-Path $installDir $ownershipFileName))) {
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf) -or
+            ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw 'The existing installation ownership files are missing or linked. Nothing was changed.'
+        }
+    }
+
+    try {
+        $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+        $marker = Get-Content -LiteralPath (Join-Path $installDir $ownershipFileName) -Raw | ConvertFrom-Json
+    }
+    catch {
+        throw 'The existing installation ownership data is damaged. Nothing was changed.'
+    }
+
+    foreach ($propertyName in @(
+        'ProductName', 'Version', 'InstallId', 'InstallDirectory', 'ProfileName',
+        'ServerAddress', 'FirewallRuleGroup', 'CertificateThumbprint'
+    )) {
+        if ($state.PSObject.Properties.Name -notcontains $propertyName -or
+            [string]::IsNullOrWhiteSpace([string]$state.$propertyName)) {
+            throw "The existing installation record is incomplete ($propertyName). Nothing was changed."
+        }
+    }
+    foreach ($propertyName in @('ProductName', 'Version', 'InstallId', 'InstallDirectory')) {
+        if ($marker.PSObject.Properties.Name -notcontains $propertyName -or
+            [string]::IsNullOrWhiteSpace([string]$marker.$propertyName)) {
+            throw "The existing ownership marker is incomplete ($propertyName). Nothing was changed."
+        }
+    }
+
+    $parsedInstallId = [guid]::Empty
+    if (-not [guid]::TryParse([string]$state.InstallId, [ref]$parsedInstallId) -or
+        -not [string]::Equals([string]$state.ProductName, $vpnName, [StringComparison]::Ordinal) -or
+        -not [string]::Equals([string]$state.Version, $ExpectedVersion, [StringComparison]::Ordinal) -or
+        -not [string]::Equals((Get-ExactFullPath ([string]$state.InstallDirectory)), $installDir, [StringComparison]::OrdinalIgnoreCase) -or
+        -not [string]::Equals([string]$state.ProfileName, $vpnName, [StringComparison]::Ordinal) -or
+        -not [string]::Equals([string]$state.FirewallRuleGroup, $ruleGroup, [StringComparison]::Ordinal) -or
+        -not [string]::Equals([string]$state.CertificateThumbprint, $certThumbprint, [StringComparison]::OrdinalIgnoreCase) -or
+        [string]$state.ServerAddress -cnotmatch '^ch[0-9]+\.nordvpn\.com$') {
+        throw 'The existing installation record does not match this package. Nothing was changed.'
+    }
+    if (-not [string]::Equals([string]$marker.ProductName, $vpnName, [StringComparison]::Ordinal) -or
+        -not [string]::Equals([string]$marker.Version, $ExpectedVersion, [StringComparison]::Ordinal) -or
+        -not [string]::Equals([string]$marker.InstallId, [string]$state.InstallId, [StringComparison]::Ordinal) -or
+        -not [string]::Equals((Get-ExactFullPath ([string]$marker.InstallDirectory)), $installDir, [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'The existing ownership marker does not match the installation record. Nothing was changed.'
+    }
+
+    $installedServerPath = Join-Path $installDir 'VPN Server.txt'
+    if (-not (Test-Path -LiteralPath $installedServerPath -PathType Leaf) -or
+        ((Get-Item -LiteralPath $installedServerPath -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+        -not [string]::Equals(
+            (Get-Content -LiteralPath $installedServerPath -Raw).Trim(),
+            [string]$state.ServerAddress,
+            [StringComparison]::Ordinal
+        )) {
+        throw 'The existing VPN server setting does not match its installation record. Nothing was changed.'
+    }
+
+    $requiredFiles = @(
+        'Switzerland VPN.exe'
+        'Switzerland VPN.ico'
+        'Switzerland VPN.png'
+        'Switzerland VPN Background.png'
+        'Uninstall Switzerland VPN.ps1'
+        'Emergency Unlock.ps1'
+        'VPN Server.txt'
+        $ownershipFileName
+    )
+    if ($RequireUpdateHelper) { $requiredFiles += 'Update Switzerland VPN.ps1' }
+    $allowed = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($name in $requiredFiles) { [void]$allowed.Add($name) }
+    $items = @(Get-ChildItem -LiteralPath $installDir -Force)
+    if ($items.Count -ne $requiredFiles.Count) {
+        throw 'The existing application folder contains missing or unexpected files. Nothing was changed.'
+    }
+    foreach ($item in $items) {
+        if ($item.PSIsContainer -or
+            ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+            -not $allowed.Contains($item.Name)) {
+            throw "The existing application folder contains an unexpected item: $($item.Name). Nothing was changed."
+        }
+    }
+
+    $appPath = Join-Path $installDir 'Switzerland VPN.exe'
+    $versionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($appPath)
+    if ($versionInfo.CompanyName -ne 'Jaye' -or $versionInfo.FileVersion -ne ($ExpectedVersion + '.0')) {
+        throw 'The installed program does not match its owned version record. Nothing was changed.'
+    }
+
+    if (-not (Test-Path -LiteralPath $uninstallKey)) {
+        throw 'The existing Windows uninstall registration is missing. Nothing was changed.'
+    }
+    $registration = Get-ItemProperty -LiteralPath $uninstallKey
+    if (-not [string]::Equals([string]$registration.DisplayName, $vpnName, [StringComparison]::Ordinal) -or
+        -not [string]::Equals([string]$registration.Publisher, 'Jaye', [StringComparison]::Ordinal) -or
+        -not [string]::Equals([string]$registration.InstallLocation, $installDir, [StringComparison]::OrdinalIgnoreCase) -or
+        -not [string]::Equals([string]$registration.DisplayVersion, $ExpectedVersion, [StringComparison]::Ordinal)) {
+        throw 'The existing Windows uninstall registration does not match this installation. Nothing was changed.'
+    }
+
+    $installedUtc = [DateTime]::UtcNow.ToString('o')
+    if ($state.PSObject.Properties.Name -contains 'InstalledUtc') {
+        $parsedInstalledUtc = [DateTimeOffset]::MinValue
+        if (-not [DateTimeOffset]::TryParse([string]$state.InstalledUtc, [ref]$parsedInstalledUtc)) {
+            throw 'The existing installation timestamp is invalid. Nothing was changed.'
+        }
+        $installedUtc = [string]$state.InstalledUtc
+    }
+    $certificateInstalledByThisRun = $false
+    if ($state.PSObject.Properties.Name -contains 'CertificateInstalledByThisRun') {
+        if ($state.CertificateInstalledByThisRun -isnot [bool]) {
+            throw 'The existing certificate ownership setting is invalid. Nothing was changed.'
+        }
+        $certificateInstalledByThisRun = [bool]$state.CertificateInstalledByThisRun
+    }
+    $replacedProfiles = @()
+    if ($state.PSObject.Properties.Name -contains 'ReplacedProfiles') {
+        foreach ($profile in @($state.ReplacedProfiles)) {
+            if ($null -eq $profile -or
+                $profile.PSObject.Properties.Name -notcontains 'Scope' -or
+                $profile.PSObject.Properties.Name -notcontains 'Name' -or
+                $profile.PSObject.Properties.Name -notcontains 'ServerAddress' -or
+                @('Current user', 'All users') -cnotcontains [string]$profile.Scope -or
+                [string]::IsNullOrWhiteSpace([string]$profile.Name) -or
+                [string]$profile.ServerAddress -notmatch '(?i)^ch[0-9]+\.nordvpn\.com$') {
+                throw 'The existing replaced-profile record is invalid. Nothing was changed.'
+            }
+            $replacedProfiles += [ordered]@{
+                Scope = [string]$profile.Scope
+                Name = [string]$profile.Name
+                ServerAddress = [string]$profile.ServerAddress
+            }
+        }
+    }
+
+    return [pscustomobject]@{
+        InstallDirectory = $installDir
+        AppPath = $appPath
+        InstallId = [string]$state.InstallId
+        ServerAddress = [string]$state.ServerAddress
+        OldVersion = $ExpectedVersion
+        SanitizedState = [ordered]@{
+            ProductName = $vpnName
+            Version = $ExpectedVersion
+            InstallId = [string]$state.InstallId
+            InstalledUtc = $installedUtc
+            InstallDirectory = $installDir
+            ProfileName = $vpnName
+            ServerAddress = [string]$state.ServerAddress
+            FirewallRuleGroup = $ruleGroup
+            CertificateThumbprint = $certThumbprint
+            CertificateInstalledByThisRun = $certificateInstalledByThisRun
+            ReplacedProfiles = $replacedProfiles
+        }
+    }
+}
+
+function Assert-WidgetIsClosedForUpgrade {
+    param([Parameter(Mandatory)][string]$AppPath)
+
+    foreach ($process in @(Get-Process -Name 'Switzerland VPN' -ErrorAction SilentlyContinue)) {
+        try {
+            if ([string]::Equals((Get-ExactFullPath $process.Path), $AppPath, [StringComparison]::OrdinalIgnoreCase)) {
+                throw 'Close Switzerland VPN from its tray icon, then run the installer again. The VPN and kill switch were not changed.'
+            }
+        }
+        finally {
+            $process.Dispose()
+        }
+    }
+}
+
+function Copy-AndVerifyUpgradeFile {
+    param(
+        [Parameter(Mandatory)][string]$Source,
+        [Parameter(Mandatory)][string]$Destination
+    )
+
+    Copy-Item -LiteralPath $Source -Destination $Destination -Force
+    if ((Get-FileHash -LiteralPath $Source -Algorithm SHA256).Hash -ne
+        (Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash) {
+        throw "Windows did not copy this upgrade file correctly: $(Split-Path -Leaf $Destination)"
+    }
+}
+
+function Invoke-ManagedInstallUpgrade {
+    param([Parameter(Mandatory)][object]$Context)
+
+    $transactionRoot = Join-Path $installParent ('.Switzerland VPN.install-upgrade-' + [guid]::NewGuid().ToString('N'))
+    $newInstall = Join-Path $transactionRoot 'new-install'
+    $backupInstall = Join-Path $transactionRoot 'old-install'
+    $failedInstall = Join-Path $transactionRoot 'failed-install'
+    $stateBackup = Join-Path $transactionRoot 'install-state.json'
+    $stateTemporary = Join-Path $stateDir ('install-state.upgrade-' + [guid]::NewGuid().ToString('N') + '.json')
+    $stateReplaceBackup = Join-Path $stateDir ('install-state.rollback-' + [guid]::NewGuid().ToString('N') + '.json')
+    $oldRegistryVersion = [string](Get-ItemProperty -LiteralPath $uninstallKey).DisplayVersion
+    $backupMoved = $false
+    $stateChanged = $false
+    $registryChanged = $false
+
+    try {
+        Assert-WidgetIsClosedForUpgrade -AppPath $Context.AppPath
+        Assert-PackageChecksums
+        New-Item -ItemType Directory -Path $transactionRoot | Out-Null
+        Set-ProtectedApplicationDirectoryAcl -Path $transactionRoot
+        New-Item -ItemType Directory -Path $newInstall | Out-Null
+
+        foreach ($name in @(
+            'Switzerland VPN.exe', 'Switzerland VPN.ico', 'Switzerland VPN.png',
+            'Switzerland VPN Background.png'
+        )) {
+            Copy-AndVerifyUpgradeFile -Source (Join-Path $payloadDir $name) -Destination (Join-Path $newInstall $name)
+        }
+        foreach ($name in @('Update Switzerland VPN.ps1', 'Uninstall Switzerland VPN.ps1', 'Emergency Unlock.ps1')) {
+            Copy-AndVerifyUpgradeFile -Source (Join-Path $powershellBackupDir $name) -Destination (Join-Path $newInstall $name)
+        }
+        Copy-AndVerifyUpgradeFile -Source (Join-Path $installDir 'VPN Server.txt') `
+            -Destination (Join-Path $newInstall 'VPN Server.txt')
+
+        $updatedMarker = [ordered]@{
+            ProductName = $vpnName
+            InstallId = $Context.InstallId
+            InstallDirectory = $installDir
+            Version = $installVersion
+        }
+        [IO.File]::WriteAllText(
+            (Join-Path $newInstall $ownershipFileName),
+            ($updatedMarker | ConvertTo-Json),
+            [Text.UTF8Encoding]::new($false)
+        )
+        Set-ProtectedApplicationDirectoryAcl -Path $newInstall
+
+        $newVersionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $newInstall 'Switzerland VPN.exe'))
+        if ($newVersionInfo.CompanyName -ne 'Jaye' -or $newVersionInfo.FileVersion -ne ($installVersion + '.0') -or
+            @(Get-ChildItem -LiteralPath $newInstall -Force).Count -ne 9) {
+            throw 'The staged upgrade failed its publisher, version, or file-layout check.'
+        }
+
+        Copy-AndVerifyUpgradeFile -Source $statePath -Destination $stateBackup
+        Set-ProtectedApplicationDirectoryAcl -Path $installDir
+        Set-ProtectedApplicationDirectoryAcl -Path $stateDir
+
+        $rechecked = Get-ValidatedManagedUpgradeContext -ExpectedVersion $Context.OldVersion
+        if (-not [string]::Equals($rechecked.InstallId, $Context.InstallId, [StringComparison]::Ordinal)) {
+            throw 'The installed ownership record changed while the upgrade was being prepared.'
+        }
+        Assert-PackageChecksums
+
+        Move-Item -LiteralPath $installDir -Destination $backupInstall
+        $backupMoved = $true
+        Move-Item -LiteralPath $newInstall -Destination $installDir
+
+        $updatedState = [ordered]@{}
+        foreach ($entry in $Context.SanitizedState.GetEnumerator()) { $updatedState[$entry.Key] = $entry.Value }
+        $updatedState.Version = $installVersion
+        [IO.File]::WriteAllText($stateTemporary, ($updatedState | ConvertTo-Json -Depth 4), [Text.UTF8Encoding]::new($false))
+        [IO.File]::Replace($stateTemporary, $statePath, $stateReplaceBackup)
+        $stateChanged = $true
+
+        New-ItemProperty -LiteralPath $uninstallKey -Name DisplayVersion -Value $installVersion `
+            -PropertyType String -Force | Out-Null
+        $registryChanged = $true
+
+        $verified = Get-ValidatedManagedUpgradeContext -ExpectedVersion $installVersion -RequireUpdateHelper
+        if (-not [string]::Equals($verified.InstallId, $Context.InstallId, [StringComparison]::Ordinal)) {
+            throw 'The upgraded installation failed its final ownership check.'
+        }
+
+        try { Remove-Item -LiteralPath $transactionRoot -Recurse -Force }
+        catch { }
+        try {
+            if (Test-Path -LiteralPath $stateReplaceBackup) {
+                Remove-Item -LiteralPath $stateReplaceBackup -Force
+            }
+        }
+        catch { }
+    }
+    catch {
+        $failure = $_.Exception.Message
+        $rollbackFailure = $null
+        try {
+            if ($registryChanged) {
+                New-ItemProperty -LiteralPath $uninstallKey -Name DisplayVersion -Value $oldRegistryVersion `
+                    -PropertyType String -Force | Out-Null
+            }
+            if ($stateChanged -and (Test-Path -LiteralPath $stateBackup -PathType Leaf)) {
+                Copy-Item -LiteralPath $stateBackup -Destination $stateTemporary -Force
+                [IO.File]::Replace($stateTemporary, $statePath, $null)
+            }
+            if ($backupMoved -and (Test-Path -LiteralPath $backupInstall -PathType Container)) {
+                if (Test-Path -LiteralPath $installDir) {
+                    Move-Item -LiteralPath $installDir -Destination $failedInstall
+                }
+                Move-Item -LiteralPath $backupInstall -Destination $installDir
+            }
+            if (Test-Path -LiteralPath $installDir -PathType Container) {
+                Get-ValidatedManagedUpgradeContext -ExpectedVersion $Context.OldVersion | Out-Null
+            }
+            if (Test-Path -LiteralPath $transactionRoot) {
+                Remove-Item -LiteralPath $transactionRoot -Recurse -Force
+            }
+            foreach ($path in @($stateTemporary, $stateReplaceBackup)) {
+                if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
+            }
+        }
+        catch {
+            $rollbackFailure = $_.Exception.Message
+        }
+        if ($rollbackFailure) {
+            throw "$failure Automatic rollback also failed: $rollbackFailure Keep the installer open and ask Jaye for help."
+        }
+        throw "$failure The previous installation was restored."
+    }
+}
+
 try {
     if ([string]::IsNullOrWhiteSpace($InstallParentDirectory)) {
         if ($ValidatePackageOnly) {
             $InstallParentDirectory = $env:ProgramFiles
         }
         else {
-            $InstallParentDirectory = Select-InstallParentDirectory
+            $InstallParentDirectory = Get-ManagedInstallParentHint
+            if ([string]::IsNullOrWhiteSpace($InstallParentDirectory)) {
+                $InstallParentDirectory = Select-InstallParentDirectory
+            }
             if ([string]::IsNullOrWhiteSpace($InstallParentDirectory)) {
                 [Windows.Forms.MessageBox]::Show(
                     'Installation was canceled. No changes were made.',
@@ -645,7 +1205,12 @@ try {
     Assert-ExactInstallPaths
     Assert-PackageFiles
     Assert-PackageChecksums
-    $serverAddress = Get-ValidatedServer
+    $serverAddress = if ($ValidatePackageOnly -or -not (Test-Path -LiteralPath $statePath -PathType Leaf)) {
+        Get-ValidatedServer
+    }
+    else {
+        $null
+    }
 }
 catch {
     $failure = $_.Exception.Message
@@ -710,9 +1275,19 @@ try {
         throw 'This package requires Windows 10 or Windows 11.'
     }
 
+    Assert-InstallParentIsProtected -Path $installParent
+    Assert-DirectoryChainHasNoReparsePoints -Path (Split-Path -Parent $stateDir)
+    if (Test-Path -LiteralPath $installDir -PathType Container) {
+        Assert-DirectoryChainHasNoReparsePoints -Path $installDir
+    }
+    if (Test-Path -LiteralPath $stateDir -PathType Container) {
+        Assert-DirectoryChainHasNoReparsePoints -Path $stateDir
+    }
+
     $existingFolderIsManaged = Test-Path -LiteralPath $statePath -PathType Leaf
+    $managedUpgradeContext = $null
     if ($existingFolderIsManaged) {
-        throw 'Switzerland VPN is already installed. Uninstall the existing copy before running this installer again.'
+        $managedUpgradeContext = Get-ValidatedManagedUpgradeContext -ExpectedVersion '1.0.9'
     }
     if ((Test-Path -LiteralPath $installDir) -and -not $existingFolderIsManaged) {
         $items = @(Get-ChildItem -LiteralPath $installDir -Force -ErrorAction SilentlyContinue)
@@ -721,7 +1296,7 @@ try {
         }
     }
 
-    if (Test-Path -LiteralPath $stateDir) {
+    if ((Test-Path -LiteralPath $stateDir) -and -not $existingFolderIsManaged) {
         $stateItems = @(Get-ChildItem -LiteralPath $stateDir -Force -ErrorAction SilentlyContinue)
         if ($stateItems.Count -gt 0) {
             throw "$stateDir already contains unmanaged files. Nothing was overwritten."
@@ -730,10 +1305,11 @@ try {
 
     $commonDesktopCollision = Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) 'Switzerland VPN.lnk'
     $commonStartCollision = Join-Path ([Environment]::GetFolderPath('CommonPrograms')) 'Switzerland VPN'
-    $uninstallKey = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Switzerland VPN Widget'
-    foreach ($collisionPath in $commonDesktopCollision, $commonStartCollision, $uninstallKey) {
-        if (Test-Path -LiteralPath $collisionPath) {
-            throw "An unmanaged installation item already exists: $collisionPath"
+    if (-not $existingFolderIsManaged) {
+        foreach ($collisionPath in $commonDesktopCollision, $commonStartCollision, $uninstallKey) {
+            if (Test-Path -LiteralPath $collisionPath) {
+                throw "An unmanaged installation item already exists: $collisionPath"
+            }
         }
     }
 }
@@ -745,6 +1321,53 @@ catch {
         [Windows.Forms.MessageBoxIcon]::Error
     ) | Out-Null
     exit 2
+}
+
+if ($null -ne $managedUpgradeContext) {
+    $answer = [Windows.Forms.MessageBox]::Show(
+        "Upgrade Switzerland VPN from 1.0.9 to $installVersion?`r`n`r`nOnly the app files and protected version records will change. The VPN profile, saved sign-in, certificate, connection, kill switch, firewall rules, and VPN server setting will stay as they are.",
+        'Upgrade Switzerland VPN',
+        [Windows.Forms.MessageBoxButtons]::YesNo,
+        [Windows.Forms.MessageBoxIcon]::Question,
+        [Windows.Forms.MessageBoxDefaultButton]::Button1
+    )
+    if ($answer -ne [Windows.Forms.DialogResult]::Yes) { exit 0 }
+
+    try {
+        Invoke-ManagedInstallUpgrade -Context $managedUpgradeContext
+    }
+    catch {
+        [Windows.Forms.MessageBox]::Show(
+            "The app upgrade stopped.`r`n`r`n$($_.Exception.Message)`r`n`r`nThe VPN profile, connection, sign-in, certificate, and firewall rules were not changed.",
+            'Switzerland VPN Upgrade Stopped',
+            [Windows.Forms.MessageBoxButtons]::OK,
+            [Windows.Forms.MessageBoxIcon]::Error
+        ) | Out-Null
+        exit 2
+    }
+
+    $exePath = Join-Path $installDir 'Switzerland VPN.exe'
+    $runNow = [Windows.Forms.MessageBox]::Show(
+        "Upgrade complete. Run Switzerland VPN now?",
+        'Switzerland VPN Upgraded',
+        [Windows.Forms.MessageBoxButtons]::YesNo,
+        [Windows.Forms.MessageBoxIcon]::Question,
+        [Windows.Forms.MessageBoxDefaultButton]::Button1
+    )
+    if ($runNow -eq [Windows.Forms.DialogResult]::Yes) {
+        try {
+            Start-AsInteractiveShellUser -FilePath $exePath -WorkingDirectory $installDir
+        }
+        catch {
+            [Windows.Forms.MessageBox]::Show(
+                'The upgrade succeeded, but Windows could not open the app automatically. Open it from the Desktop or Start menu.',
+                'Switzerland VPN Upgraded',
+                [Windows.Forms.MessageBoxButtons]::OK,
+                [Windows.Forms.MessageBoxIcon]::Warning
+            ) | Out-Null
+        }
+    }
+    exit 0
 }
 
 $message = @"
@@ -826,9 +1449,28 @@ try {
         throw 'Windows did not retain exactly one canonical all-user Switzerland VPN profile.'
     }
 
+    # Repeat the trust checks immediately before creating privileged content so
+    # a directory-link or ACL swap cannot hide in the confirmation window.
+    Assert-InstallParentIsProtected -Path $installParent
+    Assert-DirectoryChainHasNoReparsePoints -Path (Split-Path -Parent $stateDir)
+    if (Test-Path -LiteralPath $installDir -PathType Container) {
+        Assert-DirectoryChainHasNoReparsePoints -Path $installDir
+    }
+    if (Test-Path -LiteralPath $stateDir -PathType Container) {
+        Assert-DirectoryChainHasNoReparsePoints -Path $stateDir
+    }
+
     New-Item -ItemType Directory -Path $installDir -Force | Out-Null
     $createdInstallFolder = $true
+    Set-ProtectedApplicationDirectoryAcl -Path $installDir
+    if (@(Get-ChildItem -LiteralPath $installDir -Force).Count -ne 0) {
+        throw 'The application folder changed while it was being secured. Nothing from it was used.'
+    }
     New-Item -ItemType Directory -Path $stateDir -Force | Out-Null
+    Set-ProtectedApplicationDirectoryAcl -Path $stateDir
+    if (@(Get-ChildItem -LiteralPath $stateDir -Force).Count -ne 0) {
+        throw 'The installation state folder changed while it was being secured. Nothing from it was used.'
+    }
 
     foreach ($name in @(
         'Switzerland VPN.exe'
@@ -838,7 +1480,7 @@ try {
     )) {
         Copy-Item -LiteralPath (Join-Path $payloadDir $name) -Destination (Join-Path $installDir $name) -Force
     }
-    foreach ($name in @('Uninstall Switzerland VPN.ps1', 'Emergency Unlock.ps1')) {
+    foreach ($name in @('Update Switzerland VPN.ps1', 'Uninstall Switzerland VPN.ps1', 'Emergency Unlock.ps1')) {
         Copy-Item -LiteralPath (Join-Path $powershellBackupDir $name) -Destination (Join-Path $installDir $name) -Force
     }
     [IO.File]::WriteAllText((Join-Path $installDir 'VPN Server.txt'), $serverAddress + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
@@ -921,7 +1563,9 @@ catch {
                 (Get-ExactFullPath $installDir),
                 $validatedInstallTarget,
                 [StringComparison]::OrdinalIgnoreCase
-            )) {
+            ) -and
+                (((Get-Item -LiteralPath $installDir -Force).Attributes -band
+                    [IO.FileAttributes]::ReparsePoint) -eq 0)) {
                 Remove-Item -LiteralPath $installDir -Recurse -Force
             }
         }
@@ -934,9 +1578,11 @@ catch {
     if ($registryCreationStarted) {
         try { Remove-Item -LiteralPath $uninstallKey -Recurse -Force -ErrorAction SilentlyContinue } catch { }
     }
-    if (Test-Path -LiteralPath $stateDir) {
+    if (-not $existingFolderIsManaged -and (Test-Path -LiteralPath $stateDir)) {
         try {
-            if ((Get-ExactFullPath $stateDir) -eq (Get-ExactFullPath (Join-Path $env:ProgramData 'Switzerland VPN'))) {
+            if ((Get-ExactFullPath $stateDir) -eq (Get-ExactFullPath (Join-Path $env:ProgramData 'Switzerland VPN')) -and
+                (((Get-Item -LiteralPath $stateDir -Force).Attributes -band
+                    [IO.FileAttributes]::ReparsePoint) -eq 0)) {
                 Remove-Item -LiteralPath $stateDir -Recurse -Force
             }
         }
