@@ -89,7 +89,7 @@ function Test-OwnershipMarker {
         $markerDirectory = Get-SafeInstallDirectory ([string]$marker.InstallDirectory)
         if (-not [string]::Equals([string]$marker.ProductName, $productName, [StringComparison]::Ordinal) -or
             -not [string]::Equals($markerDirectory, $InstallDirectory, [StringComparison]::OrdinalIgnoreCase) -or
-            -not [string]::Equals([string]$marker.Version, '1.0.9', [StringComparison]::Ordinal)) {
+            [string]$marker.Version -notmatch '^\d+\.\d+\.\d+$') {
             return $false
         }
 

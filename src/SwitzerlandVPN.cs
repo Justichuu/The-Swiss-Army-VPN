@@ -11,6 +11,7 @@ using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.ServiceProcess;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Windows.Forms;
@@ -20,9 +21,9 @@ using System.Windows.Forms;
 [assembly: System.Reflection.AssemblyCompany("Jaye")]
 [assembly: System.Reflection.AssemblyProduct("Switzerland VPN")]
 [assembly: System.Reflection.AssemblyCopyright("Copyright 2026 Jaye")]
-[assembly: System.Reflection.AssemblyVersion("1.0.9.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.0.9.0")]
-[assembly: System.Reflection.AssemblyInformationalVersion("1.0.9.0")]
+[assembly: System.Reflection.AssemblyVersion("1.1.0.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersion("1.1.0.0")]
 
 namespace SwitzerlandVpn
 {
@@ -31,7 +32,10 @@ namespace SwitzerlandVpn
         internal const string VpnName = "Switzerland VPN";
         internal const string RuleGroup = "Switzerland VPN Kill Switch";
         internal const string DefaultServer = "ch221.nordvpn.com";
+        internal const string CurrentVersion = "1.1.0";
+        internal const string GitHubRepository = "Justichuu/The-Swiss-Army-VPN";
         internal const string RepositoryUrl = "https://github.com/Justichuu/The-Swiss-Army-VPN";
+        internal const string UpdateScriptName = "Update Switzerland VPN.ps1";
         internal const string RuleDescriptionPrefix =
             "Switzerland VPN fail-closed rule. Allowed server IPv4 addresses: ";
 
@@ -95,7 +99,419 @@ namespace SwitzerlandVpn
         Disconnect,
         DisconnectOnly,
         UnlockOnly,
-        ClearCredentials
+        ClearCredentials,
+        CheckingUpdate,
+        AwaitingUpdateConfirmation,
+        PreparingUpdate,
+        StartingUpdate
+    }
+
+    internal enum UpdateCheckState
+    {
+        Idle,
+        Checking,
+        AwaitingConfirmation,
+        Preparing,
+        Starting,
+        Failed
+    }
+
+    internal sealed class GitHubReleaseInfo
+    {
+        internal string TagName;
+        internal string VersionText;
+        internal Version Version;
+        internal bool Immutable;
+        internal string GitHubCliPath;
+    }
+
+    internal sealed class ProcessResult
+    {
+        internal int ExitCode;
+        internal string StandardOutput;
+        internal string StandardError;
+    }
+
+    internal enum UpdateRecoveryLaunchState
+    {
+        None,
+        Started,
+        Failed
+    }
+
+    internal sealed class UpdateRecoveryLaunchResult
+    {
+        internal UpdateRecoveryLaunchState State;
+        internal string ErrorMessage;
+    }
+
+    /// <summary>
+    /// Detects a protected update journal before the normal widget opens. Recovery runs in the
+    /// installed PowerShell helper after this process exits, so even the executable can be restored.
+    /// </summary>
+    internal static class PrivateUpdateRecoveryManager
+    {
+        internal static UpdateRecoveryLaunchResult StartPendingRecovery()
+        {
+            try
+            {
+                string stateDirectory = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                    AppConfig.VpnName);
+                string journalPath = Path.Combine(stateDirectory, "update-journal.json");
+                string previousJournalPath = Path.Combine(stateDirectory, "update-journal.previous.json");
+                if (!File.Exists(journalPath) && !File.Exists(previousJournalPath))
+                    return new UpdateRecoveryLaunchResult { State = UpdateRecoveryLaunchState.None };
+
+                string statePath = Path.Combine(stateDirectory, "install-state.json");
+                if (!Directory.Exists(stateDirectory) || !File.Exists(statePath))
+                    throw new InvalidOperationException("Update recovery data is incomplete. Ask Jaye for help.");
+                AssertNormalPath(stateDirectory, true);
+                AssertNormalPath(statePath, false);
+
+                string state = File.ReadAllText(statePath);
+                string installDirectory = Path.GetFullPath(ReadJsonStringProperty(state, "InstallDirectory")).TrimEnd('\\');
+                string runningDirectory = Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory).TrimEnd('\\');
+                if (!string.Equals(installDirectory, runningDirectory, StringComparison.OrdinalIgnoreCase) ||
+                    !string.Equals(Path.GetFileName(installDirectory), AppConfig.VpnName, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        "Update recovery must be started by the installed Switzerland VPN app.");
+                }
+
+                string root = Path.GetPathRoot(installDirectory);
+                DriveInfo drive = new DriveInfo(root);
+                if (!drive.IsReady || drive.DriveType != DriveType.Fixed)
+                    throw new InvalidOperationException("The installed app is not on a ready local fixed drive.");
+                AssertNormalPath(installDirectory, true);
+
+                string updateScript = Path.Combine(installDirectory, AppConfig.UpdateScriptName);
+                AssertNormalPath(updateScript, false);
+                string powershell = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+                    "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+                if (!File.Exists(powershell))
+                    throw new InvalidOperationException("Windows PowerShell is unavailable, so update recovery could not start.");
+
+                using (Process current = Process.GetCurrentProcess())
+                {
+                    string[] arguments =
+                    {
+                        "-NoProfile",
+                        "-ExecutionPolicy", "Bypass",
+                        "-WindowStyle", "Hidden",
+                        "-File", updateScript,
+                        "-RecoverOnly",
+                        "-ParentProcessId", current.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                        "-ParentProcessStartTimeUtcTicks", current.StartTime.ToUniversalTime().Ticks.ToString(
+                            System.Globalization.CultureInfo.InvariantCulture)
+                    };
+                    ProcessStartInfo startInfo = new ProcessStartInfo
+                    {
+                        FileName = powershell,
+                        Arguments = string.Join(
+                            " ",
+                            arguments.Select(PrivateUpdateManager.QuoteArgument).ToArray()),
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        WindowStyle = ProcessWindowStyle.Hidden,
+                        WorkingDirectory = installDirectory
+                    };
+                    using (Process recovery = Process.Start(startInfo))
+                    {
+                        if (recovery == null)
+                            throw new InvalidOperationException("Windows did not start update recovery.");
+                    }
+                }
+                return new UpdateRecoveryLaunchResult { State = UpdateRecoveryLaunchState.Started };
+            }
+            catch (Exception ex)
+            {
+                return new UpdateRecoveryLaunchResult
+                {
+                    State = UpdateRecoveryLaunchState.Failed,
+                    ErrorMessage = string.IsNullOrWhiteSpace(ex.Message)
+                        ? "Windows could not start update recovery. Ask Jaye for help."
+                        : ex.Message
+                };
+            }
+        }
+
+        private static void AssertNormalPath(string path, bool directory)
+        {
+            bool exists = directory ? Directory.Exists(path) : File.Exists(path);
+            if (!exists || (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+                throw new InvalidOperationException("Update recovery found a missing or linked protected path.");
+        }
+
+        private static string ReadJsonStringProperty(string json, string propertyName)
+        {
+            Match match = Regex.Match(
+                json ?? string.Empty,
+                "\\\"" + Regex.Escape(propertyName) + "\\\"\\s*:\\s*\\\"(?<value>(?:\\\\.|[^\\\"])*)\\\"",
+                RegexOptions.CultureInvariant);
+            if (!match.Success)
+                throw new InvalidOperationException("Update recovery could not read the installed app location.");
+            return Regex.Unescape(match.Groups["value"].Value);
+        }
+    }
+
+    /// <summary>
+    /// Locates GitHub CLI and reads private release metadata without exposing or copying its token.
+    /// All calls are direct child processes; no command shell is involved.
+    /// </summary>
+    internal static class PrivateUpdateManager
+    {
+        private const int AuthenticationTimeoutMilliseconds = 15000;
+        private const int ReleaseTimeoutMilliseconds = 30000;
+        private const int MaximumCapturedCharacters = 65536;
+
+        internal static GitHubReleaseInfo CheckLatestRelease()
+        {
+            string githubCli = FindGitHubCli();
+            if (githubCli == null)
+            {
+                throw new InvalidOperationException(
+                    "A system-wide GitHub CLI is not installed. Install it with winget install --id GitHub.cli, " +
+                    "reopen Switzerland VPN, then try again.");
+            }
+
+            ProcessResult cliVersion = RunProcess(
+                githubCli,
+                new[] { "--version" },
+                AuthenticationTimeoutMilliseconds);
+            Match cliVersionMatch = Regex.Match(
+                cliVersion.StandardOutput ?? string.Empty,
+                @"(?m)^gh version (\d+)\.(\d+)\.(\d+)",
+                RegexOptions.CultureInvariant);
+            Version parsedCliVersion;
+            if (cliVersion.ExitCode != 0 || !cliVersionMatch.Success ||
+                !Version.TryParse(
+                    cliVersionMatch.Groups[1].Value + "." +
+                    cliVersionMatch.Groups[2].Value + "." +
+                    cliVersionMatch.Groups[3].Value,
+                    out parsedCliVersion) ||
+                parsedCliVersion < new Version(2, 96, 0))
+            {
+                throw new InvalidOperationException(
+                    "GitHub CLI 2.96 or newer is required. Update it with winget upgrade --id GitHub.cli, " +
+                    "reopen Switzerland VPN, then try again.");
+            }
+
+            ProcessResult authentication;
+            try
+            {
+                authentication = RunProcess(
+                    githubCli,
+                    new[] { "auth", "status", "--active", "--hostname", "github.com" },
+                    AuthenticationTimeoutMilliseconds);
+            }
+            catch (System.TimeoutException)
+            {
+                throw new InvalidOperationException(
+                    "GitHub did not respond in time. Check the VPN or internet connection, then try again.");
+            }
+
+            if (authentication.ExitCode != 0)
+            {
+                throw new InvalidOperationException(
+                    "GitHub CLI is not signed in. Open PowerShell, run gh auth login, and sign in with an " +
+                    "account that can access the private repository.");
+            }
+
+            const string query =
+                "(.tag_name // \"\") + \"|\" + ((.immutable // false) | tostring) + \"|\" + " +
+                "((.draft // false) | tostring) + \"|\" + ((.prerelease // false) | tostring)";
+            ProcessResult release;
+            try
+            {
+                release = RunProcess(
+                    githubCli,
+                    new[]
+                    {
+                        "api",
+                        "--hostname", "github.com",
+                        "repos/" + AppConfig.GitHubRepository + "/releases/latest",
+                        "--jq", query
+                    },
+                    ReleaseTimeoutMilliseconds);
+            }
+            catch (System.TimeoutException)
+            {
+                throw new InvalidOperationException(
+                    "GitHub did not respond in time. Check the VPN or internet connection, then try again.");
+            }
+
+            if (release.ExitCode != 0)
+            {
+                throw new InvalidOperationException(
+                    "GitHub could not read the private release. Make sure this GitHub account has access to " +
+                    AppConfig.GitHubRepository + ", then try again.");
+            }
+
+            string[] fields = (release.StandardOutput ?? string.Empty).Trim().Split('|');
+            if (fields.Length != 4 ||
+                !string.Equals(fields[2], "false", StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(fields[3], "false", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    "GitHub did not return a normal published release. Nothing was downloaded.");
+            }
+
+            Match tag = Regex.Match(fields[0], @"^v(\d+)\.(\d+)\.(\d+)$", RegexOptions.CultureInvariant);
+            if (!tag.Success)
+            {
+                throw new InvalidOperationException(
+                    "The latest release tag is not a supported version number. Expected v1.2.3. Nothing was downloaded.");
+            }
+            if (!string.Equals(fields[1], "true", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    "The latest release is not locked against changes. Update stopped safely. " +
+                    "Ask Jaye to publish an immutable release.");
+            }
+
+            string versionText = string.Format(
+                System.Globalization.CultureInfo.InvariantCulture,
+                "{0}.{1}.{2}",
+                tag.Groups[1].Value,
+                tag.Groups[2].Value,
+                tag.Groups[3].Value);
+            Version version;
+            if (!Version.TryParse(versionText, out version))
+                throw new InvalidOperationException("The latest release version could not be read safely.");
+
+            return new GitHubReleaseInfo
+            {
+                TagName = fields[0],
+                VersionText = versionText,
+                Version = version,
+                Immutable = string.Equals(fields[1], "true", StringComparison.OrdinalIgnoreCase),
+                GitHubCliPath = githubCli
+            };
+        }
+
+        internal static string QuoteArgument(string value)
+        {
+            if (value == null) throw new ArgumentNullException("value");
+            if (value.Length == 0) return "\"\"";
+            if (value.IndexOfAny(new[] { ' ', '\t', '\n', '\v', '\"' }) < 0) return value;
+
+            StringBuilder quoted = new StringBuilder();
+            quoted.Append('\"');
+            int backslashes = 0;
+            foreach (char character in value)
+            {
+                if (character == '\\')
+                {
+                    backslashes++;
+                    continue;
+                }
+
+                if (character == '\"')
+                {
+                    quoted.Append('\\', (backslashes * 2) + 1);
+                    quoted.Append('\"');
+                }
+                else
+                {
+                    quoted.Append('\\', backslashes);
+                    quoted.Append(character);
+                }
+                backslashes = 0;
+            }
+            quoted.Append('\\', backslashes * 2);
+            quoted.Append('\"');
+            return quoted.ToString();
+        }
+
+        private static string FindGitHubCli()
+        {
+            List<string> candidates = new List<string>();
+            AddCandidate(candidates, Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                "GitHub CLI", "gh.exe"));
+            AddCandidate(candidates, Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+                "GitHub CLI", "gh.exe"));
+            return candidates.FirstOrDefault(File.Exists);
+        }
+
+        private static void AddCandidate(List<string> candidates, string candidate)
+        {
+            if (string.IsNullOrWhiteSpace(candidate)) return;
+            if (!Path.IsPathRooted(candidate) || candidate.StartsWith("\\\\", StringComparison.Ordinal)) return;
+            if (!candidates.Contains(candidate, StringComparer.OrdinalIgnoreCase)) candidates.Add(candidate);
+        }
+
+        private static ProcessResult RunProcess(string fileName, IEnumerable<string> arguments, int timeoutMilliseconds)
+        {
+            if (string.IsNullOrWhiteSpace(fileName)) throw new ArgumentException("Program path is required.", "fileName");
+            if (arguments == null) throw new ArgumentNullException("arguments");
+
+            ProcessStartInfo startInfo = new ProcessStartInfo
+            {
+                FileName = fileName,
+                Arguments = string.Join(" ", arguments.Select(QuoteArgument).ToArray()),
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                WindowStyle = ProcessWindowStyle.Hidden
+            };
+            foreach (string variableName in new[] { "GH_TOKEN", "GITHUB_TOKEN", "GH_HOST", "GH_REPO", "GH_CONFIG_DIR" })
+                startInfo.EnvironmentVariables.Remove(variableName);
+            StringBuilder standardOutput = new StringBuilder();
+            StringBuilder standardError = new StringBuilder();
+            object outputLock = new object();
+
+            using (Process process = new Process { StartInfo = startInfo })
+            {
+                process.OutputDataReceived += delegate(object sender, DataReceivedEventArgs e)
+                {
+                    if (e.Data == null) return;
+                    lock (outputLock)
+                    {
+                        if (standardOutput.Length < MaximumCapturedCharacters)
+                            standardOutput.AppendLine(e.Data.Substring(
+                                0,
+                                Math.Min(e.Data.Length, MaximumCapturedCharacters - standardOutput.Length)));
+                    }
+                };
+                process.ErrorDataReceived += delegate(object sender, DataReceivedEventArgs e)
+                {
+                    if (e.Data == null) return;
+                    lock (outputLock)
+                    {
+                        if (standardError.Length < MaximumCapturedCharacters)
+                            standardError.AppendLine(e.Data.Substring(
+                                0,
+                                Math.Min(e.Data.Length, MaximumCapturedCharacters - standardError.Length)));
+                    }
+                };
+
+                if (!process.Start()) throw new InvalidOperationException("GitHub CLI could not start.");
+                process.BeginOutputReadLine();
+                process.BeginErrorReadLine();
+                if (!process.WaitForExit(timeoutMilliseconds))
+                {
+                    try { process.Kill(); }
+                    catch (InvalidOperationException) { }
+                    process.WaitForExit();
+                    throw new System.TimeoutException();
+                }
+                process.WaitForExit();
+                lock (outputLock)
+                {
+                    return new ProcessResult
+                    {
+                        ExitCode = process.ExitCode,
+                        StandardOutput = standardOutput.ToString(),
+                        StandardError = standardError.ToString()
+                    };
+                }
+            }
+        }
     }
 
     internal sealed class RasConnection
@@ -1175,6 +1591,12 @@ namespace SwitzerlandVpn
             internal long Timestamp;
         }
 
+        private sealed class UpdaterHandoffResult
+        {
+            internal bool Ready;
+            internal string FailureMessage;
+        }
+
         private static readonly Color ConnectButtonColor = Color.FromArgb(27, 139, 93);
         private static readonly Color DisconnectButtonColor = Color.FromArgb(177, 63, 68);
         private static readonly Color DisabledButtonColor = Color.FromArgb(63, 67, 76);
@@ -1192,6 +1614,7 @@ namespace SwitzerlandVpn
         private readonly Button signInButton;
         private readonly Button clearCredentialsButton;
         private readonly Button refreshButton;
+        private readonly LinkLabel updateLink;
         private readonly CheckBox topMostCheck;
         private readonly CheckBox monitorCheck;
         private readonly ToolStripMenuItem trayConnectItem;
@@ -1202,6 +1625,7 @@ namespace SwitzerlandVpn
         private readonly ToolStripMenuItem trayUnlockOnlyItem;
         private readonly ToolStripMenuItem traySignInItem;
         private readonly ToolStripMenuItem trayClearCredentialsItem;
+        private readonly ToolStripMenuItem trayUpdateItem;
         private readonly NotifyIcon trayIcon;
         private readonly System.Windows.Forms.Timer timer;
         private readonly ToolTip toolTips;
@@ -1237,6 +1661,8 @@ namespace SwitzerlandVpn
         private volatile bool monitoringStopped;
         private Control lastDisabledToolTipControl;
         private VpnOperation currentOperation = VpnOperation.None;
+        private UpdateCheckState updateCheckState = UpdateCheckState.Idle;
+        private bool updaterHandoffStarted;
         private readonly WidgetState previewState;
 
         private bool IsActionRunning
@@ -1420,7 +1846,7 @@ namespace SwitzerlandVpn
 
             LinkLabel versionLink = new LinkLabel
             {
-                Text = "v1.0.9",
+                Text = "v" + AppConfig.CurrentVersion,
                 LinkColor = Color.FromArgb(184, 190, 201),
                 ActiveLinkColor = Color.White,
                 VisitedLinkColor = Color.FromArgb(184, 190, 201),
@@ -1433,6 +1859,24 @@ namespace SwitzerlandVpn
             versionLink.LinkClicked += delegate { OpenRepository(); };
             Controls.Add(versionLink);
             RegisterToolTip(versionLink, "Open this project on GitHub.");
+
+            updateLink = new LinkLabel
+            {
+                Text = "CHECK UPDATE",
+                LinkColor = Color.FromArgb(184, 190, 201),
+                ActiveLinkColor = Color.White,
+                VisitedLinkColor = Color.FromArgb(184, 190, 201),
+                BackColor = Color.Transparent,
+                Font = new Font("Segoe UI", 7.5f),
+                AutoSize = true,
+                LinkBehavior = LinkBehavior.HoverUnderline,
+                Location = new Point(82, 296)
+            };
+            updateLink.LinkClicked += delegate { BeginCheckForUpdate(); };
+            Controls.Add(updateLink);
+            RegisterToolTip(
+                updateLink,
+                "Check the latest private GitHub release. Requires GitHub CLI sign-in.");
 
             ContextMenuStrip trayMenu = new ContextMenuStrip { ShowItemToolTips = true };
             ToolStripMenuItem trayOpenItem = new ToolStripMenuItem("Open Switzerland VPN", null, delegate { RestoreFromTray(); })
@@ -1449,6 +1893,7 @@ namespace SwitzerlandVpn
             trayUnlockOnlyItem = new ToolStripMenuItem("Unlock Only...", null, delegate { BeginUnlockOnly(); });
             traySignInItem = new ToolStripMenuItem("Set Up Sign-In", null, delegate { BeginProtectedSignIn(false); });
             trayClearCredentialsItem = new ToolStripMenuItem("Clear Saved Credentials...", null, delegate { ClearSavedCredentials(); });
+            trayUpdateItem = new ToolStripMenuItem("Check for Updates...", null, delegate { BeginCheckForUpdate(); });
             trayConnectItem.ToolTipText = "Arm protection, then connect the VPN.";
             trayDisconnectItem.ToolTipText = "Disconnect the VPN, then restore normal internet.";
             trayConnectOnlyItem.ToolTipText = "Connect without changing kill-switch protection.";
@@ -1457,6 +1902,7 @@ namespace SwitzerlandVpn
             trayUnlockOnlyItem.ToolTipText = "Remove the kill switch without disconnecting.";
             traySignInItem.ToolTipText = "Save the VPN service sign-in.";
             trayClearCredentialsItem.ToolTipText = "Clear the saved VPN sign-in. Makes Windows forget the password. Finally, something it's good at.";
+            trayUpdateItem.ToolTipText = "Check the latest private GitHub release. Requires GitHub CLI sign-in.";
             trayMenu.Items.Add(trayConnectItem);
             trayMenu.Items.Add(trayDisconnectItem);
             trayMenu.Items.Add(new ToolStripSeparator());
@@ -1467,6 +1913,8 @@ namespace SwitzerlandVpn
             trayMenu.Items.Add(new ToolStripSeparator());
             trayMenu.Items.Add(traySignInItem);
             trayMenu.Items.Add(trayClearCredentialsItem);
+            trayMenu.Items.Add(new ToolStripSeparator());
+            trayMenu.Items.Add(trayUpdateItem);
             trayMenu.Items.Add(new ToolStripSeparator());
             ToolStripMenuItem trayExitItem = new ToolStripMenuItem("Exit", null, delegate { Close(); })
             {
@@ -1552,6 +2000,399 @@ namespace SwitzerlandVpn
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
             }
+        }
+
+        /// <summary>
+        /// Starts a serialized, non-blocking check of the latest private GitHub release.
+        /// GitHub CLI retains and supplies its own credential; this app never reads the token.
+        /// </summary>
+        private void BeginCheckForUpdate()
+        {
+            if (IsActionRunning || previewState != null) return;
+
+            currentOperation = VpnOperation.CheckingUpdate;
+            updateCheckState = UpdateCheckState.Checking;
+            PauseMonitoringForAction();
+            ApplyBusyState(currentOperation);
+            UseWaitCursor = true;
+
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                GitHubReleaseInfo release = null;
+                Exception failure = null;
+                try { release = PrivateUpdateManager.CheckLatestRelease(); }
+                catch (Exception ex) { failure = ex; }
+
+                PostToUi(delegate { CompleteReleaseCheck(release, failure); });
+            });
+        }
+
+        private void CompleteReleaseCheck(GitHubReleaseInfo release, Exception failure)
+        {
+            if (failure != null)
+            {
+                FinishUpdateOperation(UpdateCheckState.Failed);
+                MessageBox.Show(
+                    string.IsNullOrWhiteSpace(failure.Message)
+                        ? "The private update check failed. Nothing was downloaded."
+                        : failure.Message,
+                    "Switzerland VPN Update",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+                return;
+            }
+            if (release == null)
+            {
+                FinishUpdateOperation(UpdateCheckState.Failed);
+                MessageBox.Show(
+                    "GitHub did not return release information. Nothing was downloaded.",
+                    "Switzerland VPN Update",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+                return;
+            }
+
+            Version currentVersion = Version.Parse(AppConfig.CurrentVersion);
+            int comparison = release.Version.CompareTo(currentVersion);
+            if (comparison == 0)
+            {
+                FinishUpdateOperation(UpdateCheckState.Idle);
+                MessageBox.Show(
+                    "Switzerland VPN v" + AppConfig.CurrentVersion + " is already current.",
+                    "No Update Needed",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return;
+            }
+            if (comparison < 0)
+            {
+                FinishUpdateOperation(UpdateCheckState.Idle);
+                MessageBox.Show(
+                    "This build is newer than the latest published release. No downgrade was performed.",
+                    "No Update Needed",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return;
+            }
+
+            currentOperation = VpnOperation.AwaitingUpdateConfirmation;
+            updateCheckState = UpdateCheckState.AwaitingConfirmation;
+            ApplyBusyState(currentOperation);
+            DialogResult answer = MessageBox.Show(
+                "Switzerland VPN v" + release.VersionText + " is available. Download and install it now?\r\n\r\n" +
+                "The app will close. Your VPN connection and kill switch will not be changed.",
+                "Private Update Available",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question,
+                MessageBoxDefaultButton.Button1);
+            if (answer != DialogResult.Yes)
+            {
+                FinishUpdateOperation(UpdateCheckState.Idle);
+                return;
+            }
+
+            BeginUpdaterPreparation(release);
+        }
+
+        private void BeginUpdaterPreparation(GitHubReleaseInfo release)
+        {
+            if (release == null) throw new ArgumentNullException("release");
+            currentOperation = VpnOperation.PreparingUpdate;
+            updateCheckState = UpdateCheckState.Preparing;
+            ApplyBusyState(currentOperation);
+
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                UpdaterHandoffResult result = PrepareUpdaterHandoff(release);
+                PostToUi(delegate
+                {
+                    if (!result.Ready)
+                    {
+                        FinishUpdateOperation(UpdateCheckState.Failed);
+                        MessageBox.Show(
+                            result.FailureMessage,
+                            "Switzerland VPN Update",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Error);
+                        return;
+                    }
+
+                    currentOperation = VpnOperation.StartingUpdate;
+                    updateCheckState = UpdateCheckState.Starting;
+                    ApplyBusyState(currentOperation);
+                    updaterHandoffStarted = true;
+                    Close();
+                });
+            });
+        }
+
+        /// <summary>
+        /// Starts the installed updater unelevated, then waits for its elevated child to validate the
+        /// locked release and signal readiness. The form closes only after this handshake succeeds.
+        /// </summary>
+        private static UpdaterHandoffResult PrepareUpdaterHandoff(GitHubReleaseInfo release)
+        {
+            string installDirectory = Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory).TrimEnd('\\');
+            string updateScript = Path.Combine(installDirectory, AppConfig.UpdateScriptName);
+            if (!File.Exists(updateScript))
+            {
+                return new UpdaterHandoffResult
+                {
+                    FailureMessage =
+                        "The update helper is missing. Reinstall Switzerland VPN from the latest package, then try again."
+                };
+            }
+
+            string transactionId = Guid.NewGuid().ToString("N");
+            string localUpdateRoot = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Jaye",
+                "Switzerland VPN",
+                "Updates",
+                transactionId);
+            string protectedStatusRoot = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                "Switzerland VPN",
+                "Updates",
+                transactionId);
+            string readyPath = Path.Combine(protectedStatusRoot, "ready.txt");
+            string protectedFailurePath = Path.Combine(protectedStatusRoot, "failure.txt");
+            string localFailurePath = Path.Combine(localUpdateRoot, "failure.txt");
+            string localCancelPath = Path.Combine(localUpdateRoot, "cancel.txt");
+
+            try
+            {
+                ValidateInstalledUpdateHelper(installDirectory, updateScript);
+                string powershell = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+                    "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+                string[] arguments =
+                {
+                    "-NoProfile",
+                    "-ExecutionPolicy", "Bypass",
+                    "-WindowStyle", "Hidden",
+                    "-File", updateScript,
+                    "-ExpectedTag", release.TagName,
+                    "-ParentProcessId", Process.GetCurrentProcess().Id.ToString(
+                        System.Globalization.CultureInfo.InvariantCulture),
+                    "-ParentProcessStartTimeUtcTicks", Process.GetCurrentProcess().StartTime.ToUniversalTime().Ticks.ToString(
+                        System.Globalization.CultureInfo.InvariantCulture),
+                    "-GitHubCliPath", release.GitHubCliPath,
+                    "-TransactionId", transactionId
+                };
+                ProcessStartInfo startInfo = new ProcessStartInfo
+                {
+                    FileName = powershell,
+                    Arguments = string.Join(
+                        " ",
+                        arguments.Select(PrivateUpdateManager.QuoteArgument).ToArray()),
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    WindowStyle = ProcessWindowStyle.Hidden,
+                    WorkingDirectory = installDirectory
+                };
+                foreach (string variableName in new[] { "GH_TOKEN", "GITHUB_TOKEN", "GH_HOST", "GH_REPO", "GH_CONFIG_DIR" })
+                    startInfo.EnvironmentVariables.Remove(variableName);
+
+                using (Process updater = Process.Start(startInfo))
+                {
+                    if (updater == null)
+                        throw new InvalidOperationException("Windows did not start the update helper.");
+
+                    DateTime deadline = DateTime.UtcNow.AddMinutes(5);
+                    while (DateTime.UtcNow < deadline)
+                    {
+                        if (File.Exists(readyPath)) return new UpdaterHandoffResult { Ready = true };
+                        string failure = ReadHandshakeFailure(protectedFailurePath);
+                        string localFailure = ReadHandshakeFailure(localFailurePath);
+                        if (failure != null || localFailure != null)
+                        {
+                            if (localFailure != null) TryDeleteLocalUpdateDirectory(localUpdateRoot);
+                            return new UpdaterHandoffResult { FailureMessage = failure ?? localFailure };
+                        }
+                        if (updater.HasExited)
+                        {
+                            Thread.Sleep(150);
+                            failure = ReadHandshakeFailure(protectedFailurePath);
+                            localFailure = ReadHandshakeFailure(localFailurePath);
+                            if (localFailure != null) TryDeleteLocalUpdateDirectory(localUpdateRoot);
+                            return new UpdaterHandoffResult
+                            {
+                                FailureMessage = failure ?? localFailure ??
+                                    "The update helper stopped before it was ready. Nothing was installed."
+                            };
+                        }
+                        Thread.Sleep(200);
+                    }
+
+                    try
+                    {
+                        Directory.CreateDirectory(localUpdateRoot);
+                        File.WriteAllText(localCancelPath, "cancel", new UTF8Encoding(false));
+                    }
+                    catch (IOException) { }
+                    catch (UnauthorizedAccessException) { }
+                    try
+                    {
+                        if (updater.WaitForExit(5000)) TryDeleteLocalUpdateDirectory(localUpdateRoot);
+                    }
+                    catch (InvalidOperationException) { }
+                    return new UpdaterHandoffResult
+                    {
+                        FailureMessage =
+                            "The update did not become ready in five minutes. The app stayed open and nothing was installed."
+                    };
+                }
+            }
+            catch (Win32Exception ex)
+            {
+                return new UpdaterHandoffResult
+                {
+                    FailureMessage = ex.NativeErrorCode == 1223
+                        ? "Administrator approval was canceled. The update was not installed."
+                        : "Windows could not start the update helper. Nothing was installed."
+                };
+            }
+            catch (Exception)
+            {
+                return new UpdaterHandoffResult
+                {
+                    FailureMessage = "Windows could not start the update helper. Nothing was installed."
+                };
+            }
+        }
+
+        private static string ReadHandshakeFailure(string failurePath)
+        {
+            if (!File.Exists(failurePath)) return null;
+            try
+            {
+                string message = File.ReadAllText(failurePath).Trim();
+                if (message.Length > 2000) message = message.Substring(0, 2000);
+                return message.Length == 0
+                    ? "The update helper stopped safely. Nothing was installed."
+                    : message;
+            }
+            catch (IOException) { return null; }
+            catch (UnauthorizedAccessException) { return null; }
+        }
+
+        private static void TryDeleteLocalUpdateDirectory(string directory)
+        {
+            try
+            {
+                string safeRoot = Path.GetFullPath(Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "Jaye", "Switzerland VPN", "Updates")).TrimEnd('\\') + "\\";
+                string resolved = Path.GetFullPath(directory).TrimEnd('\\');
+                if (resolved.StartsWith(safeRoot, StringComparison.OrdinalIgnoreCase) &&
+                    Regex.IsMatch(Path.GetFileName(resolved), "^[a-f0-9]{32}$", RegexOptions.CultureInvariant) &&
+                    Directory.Exists(resolved))
+                {
+                    Directory.Delete(resolved, true);
+                }
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+
+        /// <summary>
+        /// Binds update execution to the protected installation registered by the installer. This
+        /// prevents a copied EXE from running an arbitrary same-name PowerShell file beside itself.
+        /// </summary>
+        private static void ValidateInstalledUpdateHelper(string installDirectory, string updateScript)
+        {
+            string normalizedInstall = Path.GetFullPath(installDirectory).TrimEnd('\\');
+            string stateDirectory = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                "Switzerland VPN");
+            string statePath = Path.Combine(stateDirectory, "install-state.json");
+            string markerPath = Path.Combine(normalizedInstall, "install-ownership.json");
+            if (!File.Exists(statePath) || !File.Exists(markerPath) || !File.Exists(updateScript))
+            {
+                throw new InvalidOperationException(
+                    "Private updates require the installed copy of Switzerland VPN. Reinstall the latest package first.");
+            }
+
+            string state = File.ReadAllText(statePath);
+            string marker = File.ReadAllText(markerPath);
+            string stateProduct = ReadJsonStringProperty(state, "ProductName");
+            string stateInstallId = ReadJsonStringProperty(state, "InstallId");
+            string stateInstallDirectory = ReadJsonStringProperty(state, "InstallDirectory");
+            string stateVersion = ReadJsonStringProperty(state, "Version");
+            string markerProduct = ReadJsonStringProperty(marker, "ProductName");
+            string markerInstallId = ReadJsonStringProperty(marker, "InstallId");
+            string markerInstallDirectory = ReadJsonStringProperty(marker, "InstallDirectory");
+            string markerVersion = ReadJsonStringProperty(marker, "Version");
+            Guid parsedInstallId;
+            if (!string.Equals(stateProduct, AppConfig.VpnName, StringComparison.Ordinal) ||
+                !string.Equals(markerProduct, AppConfig.VpnName, StringComparison.Ordinal) ||
+                !Guid.TryParse(stateInstallId, out parsedInstallId) ||
+                !string.Equals(stateInstallId, markerInstallId, StringComparison.Ordinal) ||
+                !string.Equals(stateVersion, AppConfig.CurrentVersion, StringComparison.Ordinal) ||
+                !string.Equals(stateVersion, markerVersion, StringComparison.Ordinal) ||
+                !string.Equals(
+                    Path.GetFullPath(stateInstallDirectory).TrimEnd('\\'),
+                    normalizedInstall,
+                    StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(
+                    Path.GetFullPath(markerInstallDirectory).TrimEnd('\\'),
+                    normalizedInstall,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    "The installation ownership records do not match this app. Nothing was downloaded.");
+            }
+
+            using (Microsoft.Win32.RegistryKey key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
+                @"Software\Microsoft\Windows\CurrentVersion\Uninstall\Switzerland VPN Widget",
+                false))
+            {
+                if (key == null ||
+                    !string.Equals(Convert.ToString(key.GetValue("Publisher")), "Jaye", StringComparison.Ordinal) ||
+                    !string.Equals(Convert.ToString(key.GetValue("DisplayVersion")), AppConfig.CurrentVersion, StringComparison.Ordinal) ||
+                    !string.Equals(
+                        Path.GetFullPath(Convert.ToString(key.GetValue("InstallLocation"))).TrimEnd('\\'),
+                        normalizedInstall,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException(
+                        "Windows does not recognize this as the installed Switzerland VPN app. Nothing was downloaded.");
+                }
+            }
+
+            if ((File.GetAttributes(updateScript) & FileAttributes.ReparsePoint) != 0)
+                throw new InvalidOperationException("The installed update helper is linked. Update stopped safely.");
+        }
+
+        private static string ReadJsonStringProperty(string json, string propertyName)
+        {
+            if (json == null) throw new ArgumentNullException("json");
+            Match match = Regex.Match(
+                json,
+                "\\\"" + Regex.Escape(propertyName) + "\\\"\\s*:\\s*\\\"(?<value>(?:\\\\.|[^\\\"])*)\\\"",
+                RegexOptions.CultureInvariant);
+            if (!match.Success)
+                throw new InvalidOperationException("The installation ownership data is incomplete.");
+            return Regex.Unescape(match.Groups["value"].Value);
+        }
+
+        private void PostToUi(Action action)
+        {
+            if (action == null || IsDisposed || Disposing) return;
+            try { BeginInvoke(action); }
+            catch (InvalidOperationException) { }
+        }
+
+        private void FinishUpdateOperation(UpdateCheckState finalState)
+        {
+            updateCheckState = finalState;
+            currentOperation = VpnOperation.None;
+            ResetActionLabels();
+            UseWaitCursor = false;
+            UpdateStatus();
+            ResumeMonitoringAfterAction();
+            if (finalState == UpdateCheckState.Failed) updateCheckState = UpdateCheckState.Idle;
         }
 
         private void HandleDisabledControlToolTip(object sender, MouseEventArgs e)
@@ -2235,7 +3076,55 @@ namespace SwitzerlandVpn
             trayDisconnectOnlyItem.Text = disconnectingOnly ? "Disconnecting Only..." : "Disconnect Only...";
             trayUnlockOnlyItem.Text = unlockingOnly ? "Unlocking Only..." : "Unlock Only...";
             traySignInItem.Text = preparingSignIn ? "Arming Protected Sign-In..." : "Set Up Sign-In";
+            switch (updateCheckState)
+            {
+                case UpdateCheckState.Checking:
+                    updateLink.Text = "CHECKING...";
+                    trayUpdateItem.Text = "Checking for Updates...";
+                    break;
+                case UpdateCheckState.AwaitingConfirmation:
+                    updateLink.Text = "UPDATE READY";
+                    trayUpdateItem.Text = "Update Available";
+                    break;
+                case UpdateCheckState.Preparing:
+                    updateLink.Text = "PREPARING...";
+                    trayUpdateItem.Text = "Preparing Update...";
+                    break;
+                case UpdateCheckState.Starting:
+                    updateLink.Text = "STARTING...";
+                    trayUpdateItem.Text = "Starting Update...";
+                    break;
+                default:
+                    updateLink.Text = "CHECK UPDATE";
+                    trayUpdateItem.Text = "Check for Updates...";
+                    break;
+            }
             ApplyControlState(null);
+
+            if (operation == VpnOperation.CheckingUpdate)
+            {
+                ApplyStatus(Color.FromArgb(84, 150, 235), "CHECKING FOR UPDATE",
+                    "Reading the private GitHub release...", "Checking for update");
+                return;
+            }
+            if (operation == VpnOperation.AwaitingUpdateConfirmation)
+            {
+                ApplyStatus(Color.FromArgb(84, 150, 235), "UPDATE AVAILABLE",
+                    "Waiting for your answer...", "Update available");
+                return;
+            }
+            if (operation == VpnOperation.PreparingUpdate)
+            {
+                ApplyStatus(Color.FromArgb(84, 150, 235), "PREPARING UPDATE",
+                    "Downloading and verifying the private release...", "Preparing update");
+                return;
+            }
+            if (operation == VpnOperation.StartingUpdate)
+            {
+                ApplyStatus(Color.FromArgb(84, 150, 235), "STARTING UPDATE",
+                    "The VPN and kill switch will stay as they are.", "Starting update");
+                return;
+            }
 
             if (operation == VpnOperation.Connect)
             {
@@ -2283,6 +3172,8 @@ namespace SwitzerlandVpn
             trayDisconnectOnlyItem.Text = "Disconnect Only...";
             trayUnlockOnlyItem.Text = "Unlock Only...";
             traySignInItem.Text = "Set Up Sign-In";
+            updateLink.Text = "CHECK UPDATE";
+            trayUpdateItem.Text = "Check for Updates...";
         }
 
         private void ApplyControlState(WidgetState state)
@@ -2318,6 +3209,8 @@ namespace SwitzerlandVpn
             trayUnlockOnlyItem.Enabled = unlockOnlyEnabled;
             traySignInItem.Enabled = signInEnabled;
             trayClearCredentialsItem.Enabled = !IsActionRunning;
+            updateLink.Enabled = !IsActionRunning && previewState == null;
+            trayUpdateItem.Enabled = !IsActionRunning && previewState == null;
         }
 
         private static void SetButtonAvailability(Button button, bool enabled, Color enabledColor)
@@ -3052,10 +3945,20 @@ namespace SwitzerlandVpn
                 return;
             }
 
+            if (updaterHandoffStarted)
+            {
+                monitoringStopped = true;
+                monitoringEnabled = false;
+                timer.Stop();
+                trayIcon.Visible = false;
+                trayIcon.Dispose();
+                return;
+            }
+
             if (IsActionRunning)
             {
                 MessageBox.Show(
-                    "Wait for the current VPN action to finish before exiting.",
+                    "Wait for the current operation to finish before exiting.",
                     "Switzerland VPN",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Warning);
@@ -3153,6 +4056,18 @@ namespace SwitzerlandVpn
             if (args.Length > 0 && string.Equals(args[0], "--clear-default-credentials", StringComparison.OrdinalIgnoreCase))
             {
                 RunAdministratorHelper(delegate { RasManager.ClearDefaultCredentials(AppConfig.VpnName); });
+                return;
+            }
+
+            UpdateRecoveryLaunchResult recovery = PrivateUpdateRecoveryManager.StartPendingRecovery();
+            if (recovery.State == UpdateRecoveryLaunchState.Started) return;
+            if (recovery.State == UpdateRecoveryLaunchState.Failed)
+            {
+                MessageBox.Show(
+                    recovery.ErrorMessage,
+                    "Switzerland VPN Update Recovery",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
                 return;
             }
 

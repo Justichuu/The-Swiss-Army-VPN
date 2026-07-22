@@ -19,19 +19,19 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Build and validate release files
         shell: pwsh
         run: |
-          $version = '1.0.9'
+          $version = '1.1.0'
           if ($env:GITHUB_REF_TYPE -eq 'tag') {
             $version = $env:GITHUB_REF_NAME.TrimStart('v')
           }
           .\scripts\Build-Release.ps1 -Version $version
 
       - name: Upload validated artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: switzerland-vpn-${{ github.sha }}
           path: |
@@ -45,10 +45,11 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write
+      attestations: read
 
     steps:
       - name: Download validated artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: switzerland-vpn-${{ github.sha }}
           path: artifacts
@@ -58,14 +59,87 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $assets = @(Get-ChildItem -LiteralPath .\artifacts -File |
+          $assetFiles = @(Get-ChildItem -LiteralPath .\artifacts -File |
             Where-Object { $_.Extension -eq '.zip' -or $_.Name -like '*SHA256.txt' } |
-            Sort-Object Name |
-            ForEach-Object { $_.FullName })
-          if ($assets.Count -ne 4) {
-            throw "Expected four release assets, found $($assets.Count)."
+            Sort-Object Name)
+          if ($assetFiles.Count -ne 4) {
+            throw "Expected four release assets, found $($assetFiles.Count)."
           }
-          gh release create $env:GITHUB_REF_NAME @assets `
+          $assets = @($assetFiles | ForEach-Object { $_.FullName })
+
+          gh release create $env:GITHUB_REF_NAME `
             --repo $env:GITHUB_REPOSITORY `
             --title "Switzerland VPN $env:GITHUB_REF_NAME" `
-            --generate-notes
+            --generate-notes `
+            --verify-tag `
+            --draft
+          if ($LASTEXITCODE -ne 0) {
+            throw 'GitHub could not create the draft release.'
+          }
+
+          gh release upload $env:GITHUB_REF_NAME @assets `
+            --repo $env:GITHUB_REPOSITORY
+          if ($LASTEXITCODE -ne 0) {
+            throw 'GitHub did not upload every release asset. The release remains a draft.'
+          }
+
+          $draftJson = gh api `
+            "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:GITHUB_REF_NAME"
+          if ($LASTEXITCODE -ne 0) {
+            throw 'GitHub could not return the draft release for verification.'
+          }
+          $draft = $draftJson | ConvertFrom-Json
+          if (-not $draft.draft) {
+            throw 'The release was not a draft during pre-publish verification.'
+          }
+          $remoteAssets = @($draft.assets)
+          if ($remoteAssets.Count -ne $assetFiles.Count) {
+            throw "The draft contains $($remoteAssets.Count) assets; expected $($assetFiles.Count)."
+          }
+          foreach ($assetFile in $assetFiles) {
+            $matchingRemoteAssets = @($remoteAssets | Where-Object {
+                [string]::Equals($_.name, $assetFile.Name, [StringComparison]::Ordinal)
+              })
+            if ($matchingRemoteAssets.Count -ne 1 -or
+                [long]$matchingRemoteAssets[0].size -ne [long]$assetFile.Length) {
+              throw "The uploaded asset failed exact name and size verification: $($assetFile.Name)"
+            }
+          }
+
+          gh release edit $env:GITHUB_REF_NAME `
+            --repo $env:GITHUB_REPOSITORY `
+            --draft=false `
+            --latest
+          if ($LASTEXITCODE -ne 0) {
+            throw 'GitHub could not publish the verified draft release.'
+          }
+
+          $verified = $false
+          foreach ($attempt in 1..12) {
+            $releaseImmutable = gh api `
+              "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:GITHUB_REF_NAME" `
+              --jq .immutable
+            if ($LASTEXITCODE -eq 0 -and $releaseImmutable -eq 'true') {
+              gh release verify $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY
+              $releaseVerified = $LASTEXITCODE -eq 0
+              $assetsVerified = $releaseVerified
+              if ($releaseVerified) {
+                foreach ($asset in $assets) {
+                  gh release verify-asset $env:GITHUB_REF_NAME $asset `
+                    --repo $env:GITHUB_REPOSITORY
+                  if ($LASTEXITCODE -ne 0) {
+                    $assetsVerified = $false
+                    break
+                  }
+                }
+              }
+              if ($releaseVerified -and $assetsVerified) {
+                $verified = $true
+                break
+              }
+            }
+            Start-Sleep -Seconds 10
+          }
+          if (-not $verified) {
+            throw 'Published release did not become immutable and verifiable.'
+          }

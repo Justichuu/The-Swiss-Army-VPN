@@ -9,6 +9,7 @@ A lightweight Windows tray widget for a Switzerland IKEv2 VPN, backed by Windows
 - Connects a managed Switzerland VPN profile.
 - Arms a whole-computer, fail-closed Windows Firewall kill switch.
 - Shows live tunnel traffic and protected latency on demand.
+- Verifies exact assets from immutable private releases.
 - Includes install, uninstall, emergency unlock, and PowerShell backup tools.
 
 ## Install
@@ -19,6 +20,8 @@ A lightweight Windows tray widget for a Switzerland IKEv2 VPN, backed by Windows
 4. Open the widget and choose **SET UP SIGN-IN**.
 
 Credentials are never included. Use valid NordVPN manual-service credentials. Installing or changing protection requires administrator approval.
+
+Private updates require system-wide GitHub CLI 2.96+ and `gh auth login` with an account that can read this repository. The account approving the update must have access too. No GitHub token is stored in the app.
 
 ## Build
 

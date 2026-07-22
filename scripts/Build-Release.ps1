@@ -2,7 +2,7 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '1.0.9',
+    [string]$Version = '1.1.0',
 
     [string]$OutputDirectory = ''
 )
@@ -73,6 +73,7 @@ $applicationOutput = Join-Path $outputRoot $applicationName
 
 $sourceCode = Join-Path $sourceDirectory 'SwitzerlandVPN.cs'
 $manifest = Join-Path $sourceDirectory 'SwitzerlandVPN.exe.manifest'
+$installerScript = Join-Path $installerDirectory 'Programs\PowerShell Backup\Install Switzerland VPN.ps1'
 $icon = Join-Path $assetDirectory 'Switzerland VPN.ico'
 $background = Join-Path $assetDirectory 'Switzerland VPN Background.png'
 $iconPng = Join-Path $assetDirectory 'Switzerland VPN.png'
@@ -85,9 +86,24 @@ foreach ($requiredFile in @(
     $background,
     $iconPng,
     $compiler,
-    (Join-Path $installerDirectory 'Programs\PowerShell Backup\Install Switzerland VPN.ps1')
+    $installerScript
 )) {
     Assert-FileExists $requiredFile
+}
+
+$escapedVersion = [regex]::Escape($Version)
+$expectedAssemblyVersion = $Version + '.0'
+if ((Get-Content -LiteralPath $sourceCode -Raw) -notmatch
+    ('AssemblyFileVersion\("' + [regex]::Escape($expectedAssemblyVersion) + '"\)')) {
+    throw "Source assembly version does not match build version $Version."
+}
+if ((Get-Content -LiteralPath $manifest -Raw) -notmatch
+    ('assemblyIdentity version="' + [regex]::Escape($expectedAssemblyVersion) + '"')) {
+    throw "Application manifest version does not match build version $Version."
+}
+if ((Get-Content -LiteralPath $installerScript -Raw) -notmatch
+    ('\$installVersion\s*=\s*''' + $escapedVersion + '''')) {
+    throw "Installer version does not match build version $Version."
 }
 
 New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
