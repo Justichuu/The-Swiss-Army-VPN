@@ -20,8 +20,10 @@ This project is a learning experience more than anything: an experiment in mixin
 1. Open the [latest GitHub Release](https://github.com/Justichuu/The-Swiss-Army-VPN/releases/latest).
 2. Download `Switzerland VPN Distribution <VERSION>.zip`. Do not use the green **Code → Download ZIP** option; that archive contains source code, not the compiled application.
 3. Keep the matching `Switzerland VPN Source <VERSION>.zip` beside it when sharing the application.
-4. Extract the distribution ZIP and run `Install Switzerland VPN.exe`.
-5. Open the widget and choose **SET UP SIGN-IN**.
+4. Extract the distribution ZIP and keep the folder structure intact.
+5. Run `Install Switzerland VPN.exe` from the extracted folder.
+   - The installer relies on `Programs\PowershellBackup\Install Switzerland VPN.ps1` being present in the distribution.
+6. Open the widget and choose **SET UP SIGN-IN**.
 
 Release engineering incidents and their corrective actions are documented in
 [`docs/incidents`](docs/incidents/).

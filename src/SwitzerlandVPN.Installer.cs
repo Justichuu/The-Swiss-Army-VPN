@@ -37,16 +37,35 @@ namespace SwitzerlandVpn.Installer
                 "WindowsPowerShell",
                 "v1.0",
                 "powershell.exe");
-            InstallerScriptPath = Path.Combine(
-                packageDirectory,
-                "Programs",
-                "PowershellBackup",
-                "Install Switzerland VPN.ps1");
+            InstallerScriptPath = GetInstallerScriptPath(packageDirectory);
         }
 
         internal string PackageDirectory { get; private set; }
         internal string PowerShellPath { get; private set; }
         internal string InstallerScriptPath { get; private set; }
+
+        private static string GetInstallerScriptPath(string packageDirectory)
+        {
+            string primaryScript = Path.Combine(
+                packageDirectory,
+                "Programs",
+                "PowershellBackup",
+                "Install Switzerland VPN.ps1");
+            if (File.Exists(primaryScript))
+                return primaryScript;
+
+            string fallbackScript = Path.GetFullPath(Path.Combine(
+                packageDirectory,
+                "..",
+                "installer",
+                "Programs",
+                "PowershellBackup",
+                "Install Switzerland VPN.ps1"));
+            if (File.Exists(fallbackScript))
+                return fallbackScript;
+
+            return primaryScript;
+        }
     }
 
     internal static class Program
