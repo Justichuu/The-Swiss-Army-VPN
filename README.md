@@ -19,9 +19,10 @@ This project is a learning experience more than anything: an experiment in mixin
 
 1. Open the [latest GitHub Release](https://github.com/Justichuu/The-Swiss-Army-VPN/releases/latest).
 2. Download `Switzerland VPN Distribution <VERSION>.zip`. Do not use the green **Code → Download ZIP** option; that archive contains source code, not the compiled application.
-3. Keep the matching `Switzerland VPN Source <VERSION>.zip` beside it when sharing the application.
-4. Extract the distribution ZIP and run `Install Switzerland VPN.exe`.
-5. Open the widget and choose **SET UP SIGN-IN**.
+3. Keep the matching `Switzerland VPN Source <VERSION>.zip` and `Verify Switzerland VPN Release <VERSION>.exe` beside it when sharing the application.
+4. Run the verifier. Continue only when it reports **PASS - BOTH FILES ARE EXACT**. It works offline and does not require sign-in or administrator access.
+5. Extract the distribution ZIP and run `Install Switzerland VPN.exe`.
+6. Open the widget and choose **SET UP SIGN-IN**.
 
 Release engineering incidents and their corrective actions are documented in
 [`docs/incidents`](docs/incidents/).
@@ -50,7 +51,7 @@ Build output goes to `artifacts\`. The build validates PowerShell syntax, packag
 
 The kill switch affects the whole computer while armed. The app may disconnect other active Windows RAS VPN sessions during a controlled connection change. Use **DISCONNECT + UNLOCK** to restore normal internet.
 
-Current builds are unsigned, so Windows SmartScreen may show a warning.
+Current builds are unsigned, so Windows SmartScreen may show a warning. The release verifier makes checksum verification one click, but it does not turn an unsigned executable into a code-signed one.
 
 ## Woah
 
