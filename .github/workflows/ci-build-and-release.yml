@@ -39,6 +39,7 @@ jobs:
           path: |
             artifacts/*.zip
             artifacts/*SHA256.txt
+            artifacts/Verify*Release*.exe
           if-no-files-found: error
 
   publish-release:
@@ -62,10 +63,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $assetFiles = @(Get-ChildItem -LiteralPath .\artifacts -File |
-            Where-Object { $_.Extension -eq '.zip' -or $_.Name -like '*SHA256.txt' } |
+            Where-Object {
+              $_.Extension -eq '.zip' -or
+              $_.Name -like '*SHA256.txt' -or
+              $_.Name -like 'Verify*Release*.exe'
+            } |
             Sort-Object Name)
-          if ($assetFiles.Count -ne 4) {
-            throw "Expected four release assets, found $($assetFiles.Count)."
+          if ($assetFiles.Count -ne 5) {
+            throw "Expected five release assets, found $($assetFiles.Count)."
           }
           $assets = @($assetFiles | ForEach-Object { $_.FullName })
 
