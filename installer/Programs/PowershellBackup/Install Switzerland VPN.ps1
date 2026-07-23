@@ -1055,6 +1055,19 @@ function Get-ValidatedManagedUpgradeContext {
             throw "The existing installation record is incomplete ($propertyName). Nothing was changed."
         }
     }
+
+    $firewallRuleNames = @()
+    if ($state.PSObject.Properties.Name -contains 'FirewallRuleNames') {
+        if ($state.FirewallRuleNames -isnot [System.Collections.IEnumerable]) {
+            throw 'The existing installation record specifies invalid firewall rule names. Nothing was changed.'
+        }
+        foreach ($ruleName in @($state.FirewallRuleNames)) {
+            if ([string]::IsNullOrWhiteSpace([string]$ruleName)) {
+                throw 'The existing installation record specifies invalid firewall rule names. Nothing was changed.'
+            }
+            $firewallRuleNames += [string]$ruleName
+        }
+    }
     foreach ($propertyName in @('ProductName', 'Version', 'InstallId', 'InstallDirectory')) {
         if ($marker.PSObject.Properties.Name -notcontains $propertyName -or
             [string]::IsNullOrWhiteSpace([string]$marker.$propertyName)) {
