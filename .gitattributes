@@ -1,5 +1,4 @@
 * text=auto
-
 *.cs text eol=crlf
 *.ps1 text eol=crlf
 *.cmd text eol=crlf
@@ -9,3 +8,4 @@
 *.md text eol=lf
 *.png binary
 *.ico binary
+*.exe filter=lfs diff=lfs merge=lfs -text
