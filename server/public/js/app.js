@@ -65,4 +65,8 @@ async function listDirectory(path = '') {
 
 const currentPath = decodeURIComponent(window.location.pathname === '/' ? '' : window.location.pathname.slice(1));
 document.getElementById('port').textContent = window.location.port || '80';
+const repoLink = document.getElementById('repoLink');
+if (repoLink) {
+    repoLink.href = 'https://github.com/Justichuu/The-Swiss-Army-VPN';
+}
 listDirectory(currentPath);
