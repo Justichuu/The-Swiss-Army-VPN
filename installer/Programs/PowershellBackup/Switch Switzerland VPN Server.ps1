@@ -2,8 +2,11 @@
 [CmdletBinding(DefaultParameterSetName = 'Best')]
 param(
     [Parameter(ParameterSetName = 'Server', Mandatory)]
-    [ValidatePattern('(?i)^ch[0-9]+\.nordvpn\.com$')]
+    [ValidatePattern('(?i)^[a-z]{2}[0-9]+\.nordvpn\.com$')]
     [string]$Server,
+
+    [Parameter(ParameterSetName = 'Server')]
+    [switch]$AllowAnyNordVpn,
 
     [Parameter(ParameterSetName = 'List', Mandatory)]
     [switch]$List,
@@ -38,6 +41,7 @@ function Request-AdministratorRelaunch {
     )
     if ($PSCmdlet.ParameterSetName -eq 'Server') {
         $arguments += '-Server', ('"{0}"' -f $Server)
+        if ($AllowAnyNordVpn) { $arguments += '-AllowAnyNordVpn' }
     }
     else {
         $arguments += '-Best'
@@ -132,6 +136,12 @@ function Set-ManagedServer {
 
     if (-not (Test-Administrator)) {
         throw 'Run this script from PowerShell as Administrator to change the VPN server.'
+    }
+    if ($Hostname -notmatch '(?i)^[a-z]{2}[0-9]+\.nordvpn\.com$') {
+        throw 'Enter an official NordVPN hostname such as ch221.nordvpn.com or us1234.nordvpn.com.'
+    }
+    if (-not $AllowAnyNordVpn -and $Hostname -notmatch '(?i)^ch[0-9]+\.nordvpn\.com$') {
+        throw 'Swiss-only mode accepts ch<number>.nordvpn.com servers. Enable Any NordVPN to use another country.'
     }
     Assert-SafeToSwitch
     Resolve-PublicIPv4 -Hostname $Hostname

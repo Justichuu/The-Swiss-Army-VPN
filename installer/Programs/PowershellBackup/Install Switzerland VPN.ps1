@@ -13,7 +13,7 @@ $ruleGroup = 'Switzerland VPN Kill Switch'
 $publisher = 'Justichuu'
 # The project handle changed because I got bored; accept the old publisher only while upgrading.
 $legacyPublisher = 'Jaye'
-$installVersion = '1.3.3'
+$installVersion = '1.4.3'
 $installParent = $null
 $installDir = $null
 $validatedInstallTarget = $null
@@ -1249,11 +1249,19 @@ function Invoke-ManagedInstallUpgrade {
         'Emergency Unlock.lnk'
     $emergencyShortcutBackup = Join-Path $transactionRoot 'Emergency Unlock.lnk'
     $legacyEmergencyArguments = "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $installDir 'Emergency Unlock.ps1')`""
+    $managedEmergencyExecutable = Join-Path $installDir 'Emergency Unlock.exe'
     $emergencyShortcutPreexisting = Test-Path -LiteralPath $emergencyShortcutPath -PathType Leaf
-    if ($emergencyShortcutPreexisting -and -not (Test-PackageShortcut `
-        -Path $emergencyShortcutPath `
-        -ExpectedTarget $serverShortcutPowerShell `
-        -ExpectedArguments $legacyEmergencyArguments)) {
+    $isManagedEmergencyShortcut = $emergencyShortcutPreexisting -and (
+        (Test-PackageShortcut `
+            -Path $emergencyShortcutPath `
+            -ExpectedTarget $managedEmergencyExecutable `
+            -ExpectedArguments '') -or
+        (Test-PackageShortcut `
+            -Path $emergencyShortcutPath `
+            -ExpectedTarget $serverShortcutPowerShell `
+            -ExpectedArguments $legacyEmergencyArguments)
+    )
+    if ($emergencyShortcutPreexisting -and -not $isManagedEmergencyShortcut) {
         throw "An unmanaged shortcut already exists: $emergencyShortcutPath"
     }
 
@@ -1538,12 +1546,12 @@ try {
         catch {
             throw 'The existing installation version record is damaged. Nothing was changed.'
         }
-        if (@('1.0.9', '1.1.0', '1.1.1', '1.1.2', '1.2.0', '1.3.0', '1.3.1', '1.3.2') -cnotcontains $recordedVersion) {
+        if (@('1.0.9', '1.1.0', '1.1.1', '1.1.2', '1.2.0', '1.3.0', '1.3.1', '1.3.2', '1.3.3', '1.4.0', '1.4.1', '1.4.2') -cnotcontains $recordedVersion) {
             throw "The installed version $recordedVersion cannot be upgraded by this package. Nothing was changed."
         }
         $managedUpgradeContext = Get-ValidatedManagedUpgradeContext `
             -ExpectedVersion $recordedVersion `
-            -RequireUpdateHelper:($recordedVersion -in @('1.1.0', '1.1.1', '1.1.2', '1.2.0', '1.3.0', '1.3.1', '1.3.2'))
+            -RequireUpdateHelper:($recordedVersion -in @('1.1.0', '1.1.1', '1.1.2', '1.2.0', '1.3.0', '1.3.1', '1.3.2', '1.3.3', '1.4.0', '1.4.1', '1.4.2'))
     }
     if ((Test-Path -LiteralPath $installDir) -and -not $existingFolderIsManaged) {
         $items = @(Get-ChildItem -LiteralPath $installDir -Force -ErrorAction SilentlyContinue)

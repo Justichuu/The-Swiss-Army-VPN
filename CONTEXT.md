@@ -17,6 +17,20 @@ Switzerland VPN project with executable installer and emergency unlock support. 
 
 ## Current Status (as of 2026-07-23)
 
+### Active v1.4.3 test branch update (2026-08-02)
+
+- **Branch:** `codex/vpn-server-selector`
+- **Candidate version:** v1.4.3 (local test build; not yet released or committed)
+- Added an editable Swiss server dropdown, optional official non-Swiss NordVPN hostname mode, and transactional server switching.
+- Added a separate `CURRENT: <hostname>` indicator so editing the selector cannot obscure the active saved server.
+- Confirmed a live manual switch from `ch334.nordvpn.com` to `ch380.nordvpn.com`.
+- Server changes intentionally require the VPN to be disconnected and the kill switch unlocked.
+- Fixed the v1.3.3-to-v1.4.0 upgrade shortcut check to recognize the managed `Emergency Unlock.exe` shortcut.
+- Bumped the refreshed UI package to v1.4.1 because the installer correctly rejects same-version v1.4.0 replacement; v1.4.1 explicitly permits managed upgrades from v1.4.0.
+- Fixed a tray-restore UI defect by removing the form-wide tooltip, clearing tooltip state across hide/show, and forcing a clean repaint; v1.4.2 permits managed upgrades from v1.4.1.
+- Corrected the v1.4.2 tray restore regression by restoring the required WinForms `Show()` then `WindowState = Normal` ordering; v1.4.3 permits managed upgrades from v1.4.2.
+- Full v1.4.3 manual installation, UI, connection, kill-switch, rollback, and recovery testing remains pending.
+
 - **Latest Version**: v1.3.3 ✅ (live upgrade verification recorded, all issues resolved)
 - **Active Development**: Release verifier integration, distribution validation, and installer documentation
 - **Recent Focus**:

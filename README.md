@@ -11,7 +11,7 @@ This project is a learning experience more than anything: an experiment in mixin
 - Connects a managed Switzerland VPN profile.
 - Arms a whole-computer, fail-closed Windows Firewall kill switch.
 - Shows live tunnel traffic and protected latency on demand.
-- Includes an optional Swiss server pool and a safe best-server switcher.
+- Includes an editable Swiss server dropdown and an optional custom NordVPN-country mode.
 - Verifies exact assets from immutable private releases.
 - Includes install, uninstall, emergency unlock, and PowerShell backup tools.
 
@@ -30,9 +30,13 @@ Release engineering incidents and their corrective actions are documented in
 
 Credentials are never included. Use valid NordVPN manual-service credentials. Installing or changing protection requires administrator approval.
 
-## Backup Swiss servers
+## Choose a VPN server
 
-The install keeps one Windows VPN profile so credentials and kill-switch ownership stay unambiguous. If its server stops working, disconnect and unlock first, then open **Choose Swiss VPN Server** from the Start menu. It requests administrator approval, fetches NordVPN's current online Swiss IKEv2 list, chooses the lowest-load server that resolves, and updates the managed profile and installation record together. Advanced users can run `Switch Switzerland VPN Server.ps1 -List` to inspect candidates or add `-Server ch123.nordvpn.com` to select one explicitly. `VPN Servers.txt` is a seed pool used only when the live service is unavailable.
+The widget's editable **SERVER** dropdown lists the packaged Swiss server pool. Select an entry or type a hostname, then choose **APPLY**. Swiss-only mode accepts `ch<number>.nordvpn.com`. Enable **Allow any NordVPN country server** to enter another official numbered endpoint such as `us1234.nordvpn.com`.
+
+Disconnect and unlock before changing servers. Administrator approval is required because the switch updates the all-users Windows VPN profile, `VPN Server.txt`, and the protected installation record together. It validates DNS first and rolls all three values back if the update cannot be verified.
+
+The Start-menu **Choose Swiss VPN Server** tool remains available for automatic selection. It fetches NordVPN's current online Swiss IKEv2 list, chooses the lowest-load resolvable server, and falls back to `VPN Servers.txt` when the live service is unavailable. Advanced users can run `Switch Switzerland VPN Server.ps1 -List`, select a Swiss endpoint with `-Server ch123.nordvpn.com`, or deliberately allow another country with `-Server us1234.nordvpn.com -AllowAnyNordVpn`.
 
 The first release containing a new package file may require one manual install because older exact-allowlist updaters reject unfamiliar files. Run `Install Switzerland VPN.exe`; subsequent compatible releases can update normally. The `.cmd` launcher remains available only as a troubleshooting fallback.
 
