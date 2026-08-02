@@ -7,6 +7,7 @@ using System.Drawing.Drawing2D;
 using System.IO;
 using System.Globalization;
 using System.Linq;
+using Microsoft.Win32;
 using System.Net;
 using System.Net.Http;
 using System.Net.NetworkInformation;
@@ -25,9 +26,9 @@ using System.Windows.Forms;
 [assembly: System.Reflection.AssemblyCompany("Justichuu")]
 [assembly: System.Reflection.AssemblyProduct("Switzerland VPN")]
 [assembly: System.Reflection.AssemblyCopyright("Copyright 2026 Justichuu")]
-[assembly: System.Reflection.AssemblyVersion("1.3.3.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.3.3.0")]
-[assembly: System.Reflection.AssemblyInformationalVersion("1.3.3.0")]
+[assembly: System.Reflection.AssemblyVersion("1.4.3.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.4.3.0")]
+[assembly: System.Reflection.AssemblyInformationalVersion("1.4.3.0")]
 
 namespace SwitzerlandVpn
 {
@@ -39,10 +40,11 @@ namespace SwitzerlandVpn
         // The project handle changed because I got bored; keep the old publisher only for safe upgrades.
         internal const string LegacyPublisher = "Jaye";
         internal const string DefaultServer = "ch221.nordvpn.com";
-        internal const string CurrentVersion = "1.3.3";
+        internal const string CurrentVersion = "1.4.3";
         internal const string GitHubRepository = "Justichuu/The-Swiss-Army-VPN";
         internal const string RepositoryUrl = "https://github.com/Justichuu/The-Swiss-Army-VPN";
         internal const string UpdateScriptName = "Update Switzerland VPN.ps1";
+        internal const string ServerSwitcherScriptName = "Switch Switzerland VPN Server.ps1";
         internal const string RuleDescriptionPrefix =
             "Switzerland VPN fail-closed rule. Allowed server IPv4 addresses: ";
 
@@ -62,6 +64,38 @@ namespace SwitzerlandVpn
                 if (!File.Exists(path)) return DefaultServer;
                 string value = File.ReadAllText(path).Trim();
                 return value.Length == 0 ? DefaultServer : value;
+            }
+        }
+
+        internal static string[] SwissServerPool
+        {
+            get
+            {
+                string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "VPN Servers.txt");
+                if (!File.Exists(path)) return new[] { DefaultServer };
+                return File.ReadAllLines(path)
+                    .Select(value => value.Trim().ToLowerInvariant())
+                    .Where(NetworkSafety.IsSwissNordVpnHostname)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+            }
+        }
+
+        internal static bool AllowAnyNordVpnServer
+        {
+            get
+            {
+                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"Software\Justichuu\Switzerland VPN"))
+                    return key != null && Convert.ToInt32(key.GetValue("AllowAnyNordVpnServer", 0), CultureInfo.InvariantCulture) == 1;
+            }
+            set
+            {
+                using (RegistryKey key = Registry.CurrentUser.CreateSubKey(@"Software\Justichuu\Switzerland VPN"))
+                {
+                    if (key == null) throw new InvalidOperationException("Windows could not save the server selection mode.");
+                    key.SetValue("AllowAnyNordVpnServer", value ? 1 : 0, RegistryValueKind.DWord);
+                }
             }
         }
 
@@ -119,6 +153,7 @@ namespace SwitzerlandVpn
         DisconnectOnly,
         UnlockOnly,
         ClearCredentials,
+        ChangeServer,
         CheckingUpdate,
         AwaitingUpdateConfirmation,
         PreparingUpdate,
@@ -1579,6 +1614,40 @@ namespace SwitzerlandVpn
 
     internal static class NetworkSafety
     {
+        private static readonly Regex NordVpnHostnamePattern = new Regex(
+            @"^[a-z]{2}[0-9]+\.nordvpn\.com$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        private static readonly Regex SwissNordVpnHostnamePattern = new Regex(
+            @"^ch[0-9]+\.nordvpn\.com$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        /// <summary>Returns whether a hostname is an official numbered NordVPN endpoint.</summary>
+        internal static bool IsNordVpnHostname(string host)
+        {
+            return !string.IsNullOrWhiteSpace(host) && NordVpnHostnamePattern.IsMatch(host.Trim());
+        }
+
+        /// <summary>Returns whether a hostname is an official numbered Swiss NordVPN endpoint.</summary>
+        internal static bool IsSwissNordVpnHostname(string host)
+        {
+            return !string.IsNullOrWhiteSpace(host) && SwissNordVpnHostnamePattern.IsMatch(host.Trim());
+        }
+
+        /// <summary>
+        /// Normalizes and validates a user-selected NordVPN hostname without performing network I/O.
+        /// Swiss-only mode rejects non-Swiss prefixes before any privileged change begins.
+        /// </summary>
+        internal static string NormalizeServerHostname(string host, bool allowAnyNordVpnServer)
+        {
+            string normalized = (host ?? string.Empty).Trim().ToLowerInvariant();
+            if (!IsNordVpnHostname(normalized))
+                throw new InvalidOperationException(
+                    "Enter an official NordVPN hostname such as ch221.nordvpn.com or us1234.nordvpn.com.");
+            if (!allowAnyNordVpnServer && !IsSwissNordVpnHostname(normalized))
+                throw new InvalidOperationException(
+                    "Swiss-only mode accepts ch<number>.nordvpn.com servers. Enable Any NordVPN to use another country.");
+            return normalized;
+        }
         internal static void AssertSupportedEgress()
         {
             List<string> unsupported = new List<string>();
@@ -1614,18 +1683,12 @@ namespace SwitzerlandVpn
 
         internal static IPAddress[] ResolveAndValidateServer(string host)
         {
-            if (!System.Text.RegularExpressions.Regex.IsMatch(
-                host,
-                @"^ch[0-9]+\.nordvpn\.com$",
-                System.Text.RegularExpressions.RegexOptions.IgnoreCase))
-            {
-                throw new InvalidOperationException("VPN Server.txt must contain a Swiss NordVPN hostname such as ch221.nordvpn.com.");
-            }
+            string normalizedHost = NormalizeServerHostname(host, true);
 
             IPAddress[] addresses;
             try
             {
-                addresses = Dns.GetHostAddresses(host)
+                addresses = Dns.GetHostAddresses(normalizedHost)
                     .Where(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
                     .Where(IsPublicIpv4)
                     .Distinct()
@@ -2208,7 +2271,7 @@ namespace SwitzerlandVpn
     {
         private sealed class WidgetLayout
         {
-            internal readonly Size ClientSize = new Size(418, 363);
+            internal readonly Size ClientSize = new Size(418, 409);
             internal readonly Rectangle Title = new Rectangle(33, 24, 352, 31);
             internal readonly Rectangle StatusPrefix = new Rectangle(33, 60, 61, 23);
             internal readonly Rectangle Status = new Rectangle(101, 60, 284, 23);
@@ -2219,17 +2282,22 @@ namespace SwitzerlandVpn
             internal readonly Rectangle ArmOnly = new Rectangle(121, 158, 81, 25);
             internal readonly Rectangle DisconnectOnly = new Rectangle(216, 158, 81, 25);
             internal readonly Rectangle UnlockOnly = new Rectangle(304, 158, 81, 25);
-            internal readonly Rectangle AlwaysOnTop = new Rectangle(33, 190, 110, 30);
-            internal readonly Rectangle Monitor = new Rectangle(154, 190, 110, 30);
-            internal readonly Rectangle Refresh = new Rectangle(275, 190, 110, 30);
-            internal readonly Rectangle SignIn = new Rectangle(33, 226, 169, 30);
-            internal readonly Rectangle ClearCredentials = new Rectangle(216, 226, 169, 30);
-            internal readonly Rectangle Telemetry = new Rectangle(33, 263, 352, 19);
-            internal readonly Rectangle Route = new Rectangle(33, 283, 352, 19);
-            internal readonly Rectangle Leak = new Rectangle(33, 303, 352, 19);
-            internal readonly Rectangle Version = new Rectangle(33, 324, 48, 18);
-            internal readonly Rectangle Update = new Rectangle(88, 324, 114, 18);
-            internal readonly Rectangle Footer = new Rectangle(216, 324, 169, 18);
+            internal readonly Rectangle ServerLabel = new Rectangle(33, 190, 53, 25);
+            internal readonly Rectangle Server = new Rectangle(86, 190, 211, 25);
+            internal readonly Rectangle ApplyServer = new Rectangle(304, 190, 81, 25);
+            internal readonly Rectangle AnyNordVpn = new Rectangle(33, 216, 145, 22);
+            internal readonly Rectangle CurrentServer = new Rectangle(184, 216, 201, 22);
+            internal readonly Rectangle AlwaysOnTop = new Rectangle(33, 236, 110, 30);
+            internal readonly Rectangle Monitor = new Rectangle(154, 236, 110, 30);
+            internal readonly Rectangle Refresh = new Rectangle(275, 236, 110, 30);
+            internal readonly Rectangle SignIn = new Rectangle(33, 272, 169, 30);
+            internal readonly Rectangle ClearCredentials = new Rectangle(216, 272, 169, 30);
+            internal readonly Rectangle Telemetry = new Rectangle(33, 309, 352, 19);
+            internal readonly Rectangle Route = new Rectangle(33, 329, 352, 19);
+            internal readonly Rectangle Leak = new Rectangle(33, 349, 352, 19);
+            internal readonly Rectangle Version = new Rectangle(33, 370, 48, 18);
+            internal readonly Rectangle Update = new Rectangle(88, 370, 114, 18);
+            internal readonly Rectangle Footer = new Rectangle(216, 370, 169, 18);
         }
 
         private sealed class VpnActionRequest
@@ -2274,6 +2342,10 @@ namespace SwitzerlandVpn
         private readonly Button signInButton;
         private readonly Button clearCredentialsButton;
         private readonly Button refreshButton;
+        private readonly Button applyServerButton;
+        private readonly ComboBox serverComboBox;
+        private readonly CheckBox allowAnyNordVpnCheck;
+        private readonly Label currentServerLabel;
         private readonly LinkLabel updateLink;
         private readonly CheckBox topMostCheck;
         private readonly CheckBox monitorCheck;
@@ -2365,8 +2437,6 @@ namespace SwitzerlandVpn
                 ReshowDelay = 100,
                 ShowAlways = true
             };
-            RegisterToolTip(this, "Switzerland VPN controls and live protection status.");
-
             Label title = new Label
             {
                 Text = "SWITZERLAND VPN",
@@ -2447,6 +2517,61 @@ namespace SwitzerlandVpn
             RegisterToolTip(armOnlyButton, "Arm protection without connecting. If the VPN dies, normal internet dies with it. Fair is fair.");
             RegisterToolTip(disconnectOnlyButton, "Disconnect without unlocking. Drops the tunnel. The kill switch keeps the internet hostage.");
             RegisterToolTip(unlockOnlyButton, "Remove the kill switch without disconnecting.");
+
+            Label serverLabel = new Label
+            {
+                Text = "SERVER",
+                Font = new Font("Segoe UI Semibold", 8f),
+                ForeColor = Color.FromArgb(225, 228, 235),
+                BackColor = Color.Transparent,
+                AutoSize = false,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Bounds = Grid.ServerLabel
+            };
+            serverComboBox = new ComboBox
+            {
+                DropDownStyle = ComboBoxStyle.DropDown,
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI", 8.5f),
+                Bounds = Grid.Server,
+                MaxDropDownItems = 12
+            };
+            serverComboBox.Items.AddRange(AppConfig.SwissServerPool.Cast<object>().ToArray());
+            serverComboBox.Text = AppConfig.ServerHost;
+            applyServerButton = NewSmallButton(
+                "APPLY", Grid.ApplyServer.Location, Grid.ApplyServer.Size, Color.FromArgb(55, 89, 144));
+            allowAnyNordVpnCheck = new CheckBox
+            {
+                Text = "Any NordVPN country",
+                Checked = ReadAllowAnyNordVpnSetting(),
+                AutoSize = false,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Bounds = Grid.AnyNordVpn,
+                ForeColor = Color.FromArgb(184, 190, 201),
+                BackColor = Color.Transparent
+            };
+            currentServerLabel = new Label
+            {
+                Text = "CURRENT: " + AppConfig.ServerHost,
+                Font = new Font("Segoe UI Semibold", 8f),
+                ForeColor = Color.FromArgb(184, 190, 201),
+                BackColor = Color.Transparent,
+                AutoSize = false,
+                TextAlign = ContentAlignment.MiddleRight,
+                Bounds = Grid.CurrentServer
+            };
+            Controls.Add(serverLabel);
+            Controls.Add(serverComboBox);
+            Controls.Add(applyServerButton);
+            Controls.Add(allowAnyNordVpnCheck);
+            Controls.Add(currentServerLabel);
+            RegisterToolTip(serverLabel, "The NordVPN server used by the Windows VPN profile and kill switch.");
+            RegisterToolTip(serverComboBox, "Choose a Swiss server or type an official NordVPN hostname.");
+            RegisterToolTip(applyServerButton, "Validate and apply this server to the VPN profile.");
+            RegisterToolTip(
+                allowAnyNordVpnCheck,
+                "Off accepts Swiss ch servers only. On accepts official numbered NordVPN servers in other countries.");
+            RegisterToolTip(currentServerLabel, "The server currently saved in the Windows VPN profile configuration.");
 
             topMostCheck = new CheckBox
             {
@@ -2682,6 +2807,11 @@ namespace SwitzerlandVpn
             signInButton.Click += delegate { BeginProtectedSignIn(false); };
             clearCredentialsButton.Click += delegate { ClearSavedCredentials(); };
             refreshButton.Click += delegate { UpdateStatus(); };
+            applyServerButton.Click += delegate { BeginServerChange(); };
+            allowAnyNordVpnCheck.CheckedChanged += delegate
+            {
+                if (previewState == null) SaveAllowAnyNordVpnSetting(allowAnyNordVpnCheck.Checked);
+            };
             topMostCheck.CheckedChanged += delegate { TopMost = topMostCheck.Checked; };
             monitorCheck.CheckedChanged += delegate { SetMonitoringEnabled(monitorCheck.Checked); };
             MouseMove += HandleDisabledControlToolTip;
@@ -3366,6 +3496,105 @@ namespace SwitzerlandVpn
             });
         }
 
+        private static bool ReadAllowAnyNordVpnSetting()
+        {
+            try { return AppConfig.AllowAnyNordVpnServer; }
+            catch { return false; }
+        }
+
+        private static void SaveAllowAnyNordVpnSetting(bool value)
+        {
+            try { AppConfig.AllowAnyNordVpnServer = value; }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, "Switzerland VPN", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        /// <summary>
+        /// Validates the selected hostname before launching the transactional elevated switcher.
+        /// The switcher performs the authoritative connected/firewall checks and updates the RAS
+        /// profile, persisted server file, and install state as one rollback-capable operation.
+        /// </summary>
+        private void BeginServerChange()
+        {
+            if (IsActionRunning || previewState != null) return;
+
+            string hostname;
+            try
+            {
+                hostname = NetworkSafety.NormalizeServerHostname(
+                    serverComboBox.Text,
+                    allowAnyNordVpnCheck.Checked);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, "Invalid VPN Server", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            if (string.Equals(hostname, AppConfig.ServerHost, StringComparison.OrdinalIgnoreCase)) return;
+            bool allowAny = allowAnyNordVpnCheck.Checked;
+            if (MessageBox.Show(
+                "Change the Windows VPN profile and kill-switch server to:\r\n\r\n" + hostname +
+                "\r\n\r\nThe VPN must be disconnected and the kill switch unlocked.",
+                "Apply VPN Server?",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question,
+                MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+                return;
+
+            RunAction(new VpnActionRequest
+            {
+                Operation = VpnOperation.ChangeServer,
+                SuccessMessage = "VPN server changed to " + hostname + ".",
+                Execute = delegate { RunServerSwitcher(hostname, allowAny); }
+            });
+        }
+
+        private static void RunServerSwitcher(string hostname, bool allowAnyNordVpnServer)
+        {
+            string scriptPath = Path.Combine(
+                AppDomain.CurrentDomain.BaseDirectory,
+                AppConfig.ServerSwitcherScriptName);
+            if (!File.Exists(scriptPath))
+                throw new InvalidOperationException(
+                    "The server-switch helper is missing. Reinstall Switzerland VPN before changing servers.");
+
+            string arguments = "-NoProfile -ExecutionPolicy Bypass -File \"" + scriptPath +
+                "\" -Server \"" + hostname + "\"" +
+                (allowAnyNordVpnServer ? " -AllowAnyNordVpn" : string.Empty);
+            Process process;
+            try
+            {
+                process = Process.Start(new ProcessStartInfo
+                {
+                    FileName = "powershell.exe",
+                    Arguments = arguments,
+                    UseShellExecute = true,
+                    Verb = "runas",
+                    WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory,
+                    WindowStyle = ProcessWindowStyle.Hidden
+                });
+                if (process == null)
+                    throw new InvalidOperationException("Windows could not open Administrator approval.");
+            }
+            catch (Win32Exception ex)
+            {
+                if (ex.NativeErrorCode == 1223)
+                    throw new InvalidOperationException("Administrator approval was canceled. The VPN server was not changed.");
+                throw new InvalidOperationException("Windows could not open Administrator approval for the server change.", ex);
+            }
+
+            using (process)
+            {
+                process.WaitForExit();
+                if (process.ExitCode != 0)
+                    throw new InvalidOperationException(
+                        "The VPN server change failed. The previous setting should still be active; run the switch helper manually for detailed output.");
+            }
+        }
+
         private void BeginArmOnly()
         {
             if (IsActionRunning || previewState != null) return;
@@ -3756,6 +3985,8 @@ namespace SwitzerlandVpn
                     currentOperation = VpnOperation.None;
                     ResetActionLabels();
                     UseWaitCursor = false;
+                    if (failure == null && request.Operation == VpnOperation.ChangeServer)
+                        serverComboBox.Text = AppConfig.ServerHost;
                     UpdateStatus();
                     ResumeMonitoringAfterAction();
 
@@ -3814,6 +4045,7 @@ namespace SwitzerlandVpn
             bool disconnectingOnly = operation == VpnOperation.DisconnectOnly;
             bool unlockingOnly = operation == VpnOperation.UnlockOnly;
             bool preparingSignIn = operation == VpnOperation.PrepareSignIn;
+            bool changingServer = operation == VpnOperation.ChangeServer;
             connectButton.Text = connecting ? "CONNECTING..." : "CONNECT + ARM";
             connectOnlyButton.Text = connectingOnly ? "CONNECT..." : "CONNECT";
             armOnlyButton.Text = armingOnly ? "ARM..." : "ARM";
@@ -3821,6 +4053,7 @@ namespace SwitzerlandVpn
             disconnectOnlyButton.Text = disconnectingOnly ? "STOP..." : "DISCONNECT";
             unlockOnlyButton.Text = unlockingOnly ? "UNLOCK..." : "UNLOCK";
             signInButton.Text = preparingSignIn ? "ARMING SIGN-IN..." : "SET UP SIGN-IN";
+            applyServerButton.Text = changingServer ? "APPLYING..." : "APPLY";
             trayConnectItem.Text = connecting ? "Connecting + Arming..." : "Connect + Arm";
             trayConnectOnlyItem.Text = connectingOnly ? "Connecting Only..." : "Connect Only...";
             trayArmOnlyItem.Text = armingOnly ? "Arming Only..." : "Arm Only...";
@@ -3877,6 +4110,12 @@ namespace SwitzerlandVpn
                     "The VPN and kill switch will stay as they are.", "Starting update");
                 return;
             }
+            if (operation == VpnOperation.ChangeServer)
+            {
+                ApplyStatus(Color.FromArgb(84, 150, 235), "CHANGING SERVER",
+                    "Validating and updating the Windows VPN profile...", "Changing VPN server");
+                return;
+            }
 
             if (operation == VpnOperation.Connect)
             {
@@ -3917,6 +4156,7 @@ namespace SwitzerlandVpn
             disconnectOnlyButton.Text = "DISCONNECT";
             unlockOnlyButton.Text = "UNLOCK";
             signInButton.Text = "SET UP SIGN-IN";
+            applyServerButton.Text = "APPLY";
             trayConnectItem.Text = "Connect + Arm";
             trayConnectOnlyItem.Text = "Connect Only...";
             trayArmOnlyItem.Text = "Arm Only...";
@@ -3953,6 +4193,12 @@ namespace SwitzerlandVpn
             signInButton.Enabled = signInEnabled;
             clearCredentialsButton.Enabled = !IsActionRunning;
             refreshButton.Enabled = !IsActionRunning;
+            serverComboBox.Enabled = !IsActionRunning && previewState == null;
+            allowAnyNordVpnCheck.Enabled = !IsActionRunning && previewState == null;
+            SetButtonAvailability(
+                applyServerButton,
+                !IsActionRunning && previewState == null,
+                Color.FromArgb(55, 89, 144));
             monitorCheck.Enabled = !IsActionRunning;
             trayConnectItem.Enabled = connectEnabled;
             trayConnectOnlyItem.Enabled = connectOnlyEnabled;
@@ -4035,6 +4281,7 @@ namespace SwitzerlandVpn
         private void UpdateStatus()
         {
             if (IsActionRunning) return;
+            UpdateCurrentServerLabel();
             if (previewState == null)
             {
                 if (monitoringEnabled)
@@ -4082,6 +4329,15 @@ namespace SwitzerlandVpn
                 ApplyDisplayState(WidgetDisplayState.Unavailable, null);
                 ApplyPreviewTelemetry(null);
             }
+        }
+
+        /// <summary>
+        /// Refreshes the read-only active-server indicator without replacing a pending hostname
+        /// that the user is editing in the selector.
+        /// </summary>
+        private void UpdateCurrentServerLabel()
+        {
+            currentServerLabel.Text = "CURRENT: " + AppConfig.ServerHost;
         }
 
         /// <summary>
@@ -5124,6 +5380,7 @@ namespace SwitzerlandVpn
         {
             if (WindowState == FormWindowState.Minimized)
             {
+                ClearActiveToolTip();
                 UpdateMonitoringTimerInterval();
                 Hide();
                 trayIcon.BalloonTipTitle = "Switzerland VPN";
@@ -5135,12 +5392,26 @@ namespace SwitzerlandVpn
 
         private void RestoreFromTray()
         {
+            ClearActiveToolTip();
             Show();
             WindowState = FormWindowState.Normal;
+            ClearActiveToolTip();
             UpdateMonitoringTimerInterval();
             Activate();
             BringToFront();
+            Invalidate(true);
+            Update();
             UpdateStatus();
+        }
+
+        /// <summary>
+        /// Dismisses both automatic and manually displayed tooltips before a tray visibility
+        /// transition so WinForms cannot retain an orphaned tooltip window over the restored form.
+        /// </summary>
+        private void ClearActiveToolTip()
+        {
+            toolTips.Hide(this);
+            lastDisabledToolTipControl = null;
         }
 
         private void HandleClosing(object sender, FormClosingEventArgs e)

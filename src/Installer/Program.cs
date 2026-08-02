@@ -1,82 +1,16 @@
-// SPDX-License-Identifier: GPL-3.0-only
 using System;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
-using System.Reflection;
 using System.Windows.Forms;
-
-[assembly: AssemblyTitle("Switzerland VPN Installer")]
-[assembly: AssemblyDescription("Installs Switzerland VPN without displaying a PowerShell console.")]
-[assembly: AssemblyCompany("Justichuu")]
-[assembly: AssemblyProduct("Switzerland VPN")]
-[assembly: AssemblyCopyright("Copyright (c) Justichuu")]
-[assembly: AssemblyVersion("1.4.3.0")]
-[assembly: AssemblyFileVersion("1.4.3.0")]
-[assembly: AssemblyInformationalVersion("1.4.3")]
 
 namespace SwitzerlandVpn.Installer
 {
-    internal enum InstallerStatus
-    {
-        Starting,
-        ValidatingPackage,
-        Running,
-        Completed,
-        Failed
-    }
-
-    internal sealed class InstallerConfiguration
-    {
-        internal InstallerConfiguration(string packageDirectory)
-        {
-            PackageDirectory = packageDirectory;
-            PowerShellPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.Windows),
-                "System32",
-                "WindowsPowerShell",
-                "v1.0",
-                "powershell.exe");
-            InstallerScriptPath = GetInstallerScriptPath(packageDirectory);
-        }
-
-        internal string PackageDirectory { get; private set; }
-        internal string PowerShellPath { get; private set; }
-        internal string InstallerScriptPath { get; private set; }
-
-        private static string GetInstallerScriptPath(string packageDirectory)
-        {
-            string primaryScript = Path.Combine(
-                packageDirectory,
-                "Programs",
-                "PowershellBackup",
-                "Install Switzerland VPN.ps1");
-            if (File.Exists(primaryScript))
-                return primaryScript;
-
-            string fallbackScript = Path.GetFullPath(Path.Combine(
-                packageDirectory,
-                "..",
-                "installer",
-                "Programs",
-                "PowershellBackup",
-                "Install Switzerland VPN.ps1"));
-            if (File.Exists(fallbackScript))
-                return fallbackScript;
-
-            return primaryScript;
-        }
-    }
-
     internal static class Program
     {
         private const string DialogTitle = "Switzerland VPN Installer";
         private static InstallerStatus status = InstallerStatus.Starting;
 
-        /// <summary>
-        /// Validates the extracted package and runs its hardened PowerShell installer with no console window.
-        /// The native launcher is elevated by its manifest so the script never has to open a second host.
-        /// </summary>
         [STAThread]
         private static int Main()
         {
