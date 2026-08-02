@@ -24,8 +24,7 @@ Switzerland VPN project with executable installer and emergency unlock support. 
   - ✅ Manual SHA256 verification PASSED for v1.3.3 distribution & source ZIPs
   - ✅ All v1.3.1/v1.3.2 release failures resolved in v1.3.3
   - ✅ Installer runtime path fallback fix applied in `src/SwitzerlandVPN.Installer.cs`
-  - ✅ File browser server refactored into modular `server/` folder with `server/index.js`, `server/lib/`, and `server/public/`
-  - ⚠️ Root-level `server.js` and `index.html` remain legacy artifacts and should be removed before final merge
+  - ✅ Optional private directory server separated from the VPN repository
   - ✅ Installation documentation updated for clearer packaged-release extraction guidance
   - ✅ Readme and context documentation aligned with current distribution workflow
 
@@ -100,7 +99,6 @@ No VPN/firewall configuration was lost - rollback path preserved everything (VPN
 ```
 src/           - Source code (.cs files for C# Windows Forms app)
 installer/     - Installers and scripts (PowerShell, .exe launchers)
-server/        - File browser server implementation and public UI assets
 docs/          - Documentation (incidents, media, guides)
 scripts/       - Automation scripts (Build-Release.ps1, etc.)
 assets/        - Project assets
@@ -110,27 +108,20 @@ artifacts/     - Build outputs (NOT in git due to .gitignore)
 
 ## Current Task: Release Verifier Integration
 
-**Status**: ✅ Committed to `main-with-verifier`, ⏳ Ready for PR review
+**Status**: ✅ Committed to `main-with-verifier`, ⏳ Needs PR creation for review
 
 ### What was done
 
 - Created `Verify Switzerland VPN Release 1.3.3.exe` in `artifacts/verifier-integration-test/`
 - Verified v1.3.3 distribution and source ZIPs match expected SHA256 checksums (PASS)
-- Refactored the file browser into modular server files under `server/`
 - Applied installer runtime path fallback fix in `src/SwitzerlandVPN.Installer.cs`
 - Committed via Git LFS to avoid bloating repo
 
-### Next step
-
-- Open a pull request from `main-with-verifier` into `main`
-- Review the modular server refactor and release verifier integration
-- Remove legacy root `server.js`/`index.html` artifacts if the PR is accepted
-
 ### What needs to be done
 
-1. **Create Pull Request** from `main-with-verifier` → `main`
-   - Captures the verifier integration and modular server refactor
-   - Allows review of the current branch and cleanup of legacy root artifacts
+1. **Create Pull Request** from `main-with-verifier` → `original-main`
+   - Allows review of verifier addition
+   - People can choose to merge or keep branches separate
 
 2. **Update CI workflow** to run verifier automatically on releases
 
