@@ -52,7 +52,7 @@ Build output goes to `artifacts\`. The build validates PowerShell syntax, packag
 
 The kill switch affects the whole computer while armed. The app may disconnect other active Windows RAS VPN sessions during a controlled connection change. Use **DISCONNECT + UNLOCK** to restore normal internet.
 
-Current builds are unsigned, so Windows SmartScreen may show a warning.
+Current builds are unsigned, so Windows SmartScreen may show a warning. The release verifier makes checksum verification one click, but it does not turn an unsigned executable into a code-signed one.
 
 ## Woah
 

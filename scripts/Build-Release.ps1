@@ -69,6 +69,7 @@ $applicationZip = Join-Path $outputRoot ($applicationName + '.zip')
 $sourceZip = Join-Path $outputRoot ($sourceName + '.zip')
 $applicationChecksum = Join-Path $outputRoot ($applicationName + ' SHA256.txt')
 $sourceChecksum = Join-Path $outputRoot ($sourceName + ' SHA256.txt')
+$releaseVerifier = Join-Path $outputRoot ("Verify Switzerland VPN Release $Version.exe")
 $applicationOutput = Join-Path $outputRoot $applicationName
 
 $sourceCode = Join-Path $sourceDirectory 'SwitzerlandVPN.cs'
@@ -77,6 +78,9 @@ $installerSourceCode = Join-Path $sourceDirectory 'SwitzerlandVPN.Installer.cs'
 $installerManifest = Join-Path $sourceDirectory 'SwitzerlandVPN.Installer.exe.manifest'
 $unlockSourceCode = Join-Path $sourceDirectory 'SwitzerlandVPN.EmergencyUnlock.cs'
 $unlockManifest = Join-Path $sourceDirectory 'SwitzerlandVPN.EmergencyUnlock.exe.manifest'
+$releaseVerifierSourceCode = Join-Path $sourceDirectory 'SwitzerlandVPN.ReleaseVerifier.cs'
+$releaseVerifierManifest = Join-Path $sourceDirectory 'SwitzerlandVPN.ReleaseVerifier.exe.manifest'
+$releaseVerifierBuildScript = Join-Path $repositoryRoot 'scripts\Build-ReleaseVerifier.ps1'
 $installerScript = Join-Path $installerDirectory 'Programs\PowershellBackup\Install Switzerland VPN.ps1'
 $icon = Join-Path $assetDirectory 'Switzerland VPN.ico'
 $background = Join-Path $assetDirectory 'Switzerland VPN Background.png'
@@ -90,6 +94,9 @@ foreach ($requiredFile in @(
     $installerManifest,
     $unlockSourceCode,
     $unlockManifest,
+    $releaseVerifierSourceCode,
+    $releaseVerifierManifest,
+    $releaseVerifierBuildScript,
     $icon,
     $background,
     $iconPng,
@@ -281,7 +288,8 @@ try {
         $applicationZip,
         $sourceZip,
         $applicationChecksum,
-        $sourceChecksum
+        $sourceChecksum,
+        $releaseVerifier
     )) {
         if (Test-Path -LiteralPath $oldPath) {
             Remove-Item -LiteralPath $oldPath -Recurse -Force
@@ -301,12 +309,22 @@ try {
         "$sourceHash  $([IO.Path]::GetFileName($sourceZip))"
     )
 
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $releaseVerifierBuildScript `
+        -Version $Version `
+        -DistributionPath $applicationZip `
+        -SourcePath $sourceZip `
+        -OutputPath $releaseVerifier | Out-Null
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $releaseVerifier -PathType Leaf)) {
+        throw "Release verifier build failed with exit code $LASTEXITCODE."
+    }
+
     [pscustomobject]@{
         Version = $Version
         ApplicationZip = $applicationZip
         ApplicationSha256 = $applicationHash
         SourceZip = $sourceZip
         SourceSha256 = $sourceHash
+        ReleaseVerifier = $releaseVerifier
     }
 }
 finally {
