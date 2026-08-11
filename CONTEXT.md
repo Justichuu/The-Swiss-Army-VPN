@@ -2,11 +2,11 @@
 
 ## Project Overview
 
-Switzerland VPN project with executable installer and emergency unlock support. Built as a learning experience ("vibe coding experiment") with Justichuu branding.
+Swiss Army VPN project with executable installer and emergency unlock support. Built as a learning experience ("vibe coding experiment") with Justichuu branding.
 
 **What it does:**
 
-- Connects a managed Switzerland IKEv2 VPN profile (NordVPN credentials)
+- Connects a managed Swiss Army VPN IKEv2 VPN profile (NordVPN credentials)
 - Arms a whole-computer, fail-closed Windows Firewall kill switch
 - Shows live tunnel traffic and protected latency on demand
 - Includes optional Swiss server pool and safe best-server switcher
@@ -16,6 +16,59 @@ Switzerland VPN project with executable installer and emergency unlock support. 
 **Important:** The kill switch affects the whole computer while armed. The app may disconnect other active Windows RAS VPN sessions during a controlled connection change. Use **DISCONNECT + UNLOCK** to restore normal internet.
 
 ## Current Status (as of 2026-07-23)
+
+### v1.4.5.0 - IPv6 transition tunnel guidance (2026-08-11)
+
+- **Reported:** SET UP SIGN-IN, CONNECT, ARM and CONNECT + ARM all failed with
+  "The kill switch cannot safely classify this active internet adapter ... Teredo
+  Tunneling Pseudo-Interface (type 131)". Every one of those buttons routes through
+  `ArmKillSwitchAndVerify()`, which calls `NetworkSafety.AssertSupportedEgress()`.
+- **Not a false positive.** The reporting machine's Teredo interface held a qualified
+  global address (`2001:0:...`) and a live `::/0` IPv6 default route. Windows Firewall
+  rules can only be scoped to `Lan`, `Wireless`, `RemoteAccess`, or `All`; the managed
+  rules use `Lan`/`Wireless` so the VPN's own tunnel adapter stays unblocked, which
+  leaves a type-131 tunnel genuinely outside the block rules. Refusing to arm is correct.
+- **Fixed the message, not the check.** `AssertSupportedEgress()` now recognises Teredo,
+  ISATAP, and 6to4 and reports the exact `netsh interface <name> set state disabled`
+  command plus how to reverse it. The old text said "Disconnect it", which is impossible
+  for a pseudo-interface. No classification was relaxed - the arm still fails.
+- Verified by invoking the real method on the affected machine: blocked with the new
+  message while Teredo was qualified, passed once Teredo was set to disabled.
+- **Copyable command dialog.** `CommandRequiredException` carries the bare command alongside
+  the message, and `CommandFailureDialog` shows it with a `Copy Command` button. The command
+  goes to the clipboard automatically in `OnShown`; a failed copy says so rather than claiming
+  a copy that did not happen. `RunAction` routes only this exception type to the new dialog -
+  every other failure keeps the plain message box.
+- v1.4.5.0 permits managed upgrades from v1.4.4 and v1.4.5. v1.4.4 shipped the new message
+  but not the copyable dialog, and was installed before the dialog existed - hence the extra
+  bump. The installer rejects same-version replacement, so every rebuild that reaches an
+  installed machine needs its own version.
+
+### Four-part versions from 1.4.5.0 (2026-08-11)
+
+Because same-version replacement is rejected, one fix can burn several patch numbers. The
+product version now carries a fourth segment - `1.4.5.0`, `1.4.5.1` - so rebuilds increment
+that instead. Release tags follow: `v1.4.5.0`.
+
+- **Produced** versions are strict four-part: `ValidatePattern('^\d+\.\d+\.\d+\.\d+$')` in
+  both build scripts. `$expectedAssemblyVersion` is now the version itself, not `$Version + '.0'`.
+- **Observed** versions stay permissive, `^\d+\.\d+\.\d+(\.\d+)?$`, everywhere the code reads
+  a version it did not produce: install state, ownership markers, the update journal, and
+  release tags. Installs recorded before this change hold three-part versions and must keep
+  upgrading. `Get-ExpectedFileVersion` pads a three-part version to four for file-version
+  comparisons; four-part versions pass through.
+- Legacy `v1.2.3` tags now normalise to `1.2.3.0` when parsed. This also removes a latent
+  comparison bug: a three-part `System.Version` has `Revision = -1`, so `1.4.5` sorts *below*
+  `1.4.5.0`, and an update check comparing a three-part tag against a four-part current
+  version would have misread "already current". Both sides are four-part now.
+- Left alone deliberately: `Update Swiss Army VPN.ps1:567` matches the **GitHub CLI's**
+  version, not ours. It stays three-part.
+
+**Watch out:** a managed upgrade also validates the *existing* folder. The 1.4.3 install at
+`F:\Program Files\Swiss Army VPN` was missing `Swiss Army VPN.png`, which nothing in the app
+reads (only `Swiss Army VPN Background.png` is loaded at runtime), so it went unnoticed until
+the layout check counted 11 files instead of 12. Cause of the loss is unknown - both the
+fresh-install and upgrade paths do copy it. The validator was left strict on purpose.
 
 ### Active v1.4.3 test branch update (2026-08-02)
 
@@ -34,10 +87,10 @@ Switzerland VPN project with executable installer and emergency unlock support. 
 - **Latest Version**: v1.3.3 ✅ (live upgrade verification recorded, all issues resolved)
 - **Active Development**: Release verifier integration, distribution validation, and installer documentation
 - **Recent Focus**:
-  - ✅ Verifier executable created: `Verify Switzerland VPN Release 1.3.3.exe`
+  - ✅ Verifier executable created: `Verify Swiss Army VPN Release 1.3.3.exe`
   - ✅ Manual SHA256 verification PASSED for v1.3.3 distribution & source ZIPs
   - ✅ All v1.3.1/v1.3.2 release failures resolved in v1.3.3
-  - ✅ Installer runtime path fallback fix applied in `src/SwitzerlandVPN.Installer.cs`
+  - ✅ Installer runtime path fallback fix applied in `src/SwissArmyVPN.Installer.cs`
   - ✅ Optional private directory server separated from the VPN repository
   - ✅ Installation documentation updated for clearer packaged-release extraction guidance
   - ✅ Readme and context documentation aligned with current distribution workflow
@@ -116,7 +169,8 @@ installer/     - Installers and scripts (PowerShell, .exe launchers)
 docs/          - Documentation (incidents, media, guides)
 scripts/       - Automation scripts (Build-Release.ps1, etc.)
 assets/        - Project assets
-artifacts/     - Build outputs (NOT in git due to .gitignore)
+artifacts/     - Build outputs, one folder per version: artifacts/builds/<version>/
+               (NOT in git due to .gitignore)
 .github/       - CI/CD configuration
 ```
 
@@ -126,9 +180,9 @@ artifacts/     - Build outputs (NOT in git due to .gitignore)
 
 ### What was done
 
-- Created `Verify Switzerland VPN Release 1.3.3.exe` in `artifacts/verifier-integration-test/`
+- Created `Verify Swiss Army VPN Release 1.3.3.exe` in `artifacts/verifier-integration-test/`
 - Verified v1.3.3 distribution and source ZIPs match expected SHA256 checksums (PASS)
-- Applied installer runtime path fallback fix in `src/SwitzerlandVPN.Installer.cs`
+- Applied installer runtime path fallback fix in `src/SwissArmyVPN.Installer.cs`
 - Committed via Git LFS to avoid bloating repo
 
 ### What needs to be done
@@ -151,7 +205,9 @@ From Windows PowerShell:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\Build-Release.ps1
 ```
 
-Build output goes to `artifacts/`. The build validates:
+Build output goes to `artifacts/builds/<version>/` - one folder per version, never a shared
+flat directory. `-OutputDirectory` still works and gets the same `builds/<version>` nesting
+underneath it. The build validates:
 
 - PowerShell syntax
 - Package checksums

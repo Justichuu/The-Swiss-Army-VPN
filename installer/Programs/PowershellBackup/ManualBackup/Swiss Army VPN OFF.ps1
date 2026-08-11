@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 
-$ruleGroup = 'Switzerland VPN Kill Switch'
+$ruleGroup = 'Swiss Army VPN Kill Switch'
 $scriptFolder = Split-Path -Parent $PSCommandPath
 $profileFile = Join-Path $scriptFolder 'VPN Profile.txt'
 
@@ -41,4 +41,4 @@ if ((Get-ManagedVpnConnection).ConnectionStatus -eq 'Connected') {
     & rasdial.exe $vpnName /disconnect
 }
 
-Write-Host 'Switzerland is disconnected. Kill switch is OFF and normal internet is restored.' -ForegroundColor Green
+Write-Host 'Swiss Army VPN is disconnected. Kill switch is OFF and normal internet is restored.' -ForegroundColor Green

@@ -2,20 +2,20 @@ $ErrorActionPreference = 'Stop'
 
 Add-Type -AssemblyName System.Windows.Forms
 
-$productName = 'Switzerland VPN'
-$vpnName = 'Switzerland VPN'
-$ruleGroup = 'Switzerland VPN Kill Switch'
+$productName = 'Swiss Army VPN'
+$vpnName = 'Swiss Army VPN'
+$ruleGroup = 'Swiss Army VPN Kill Switch'
 $certificateThumbprint = 'B0A21991007734F5E80C977DD295FFEFB5AD6229'
-$stateDir = Join-Path $env:ProgramData 'Switzerland VPN'
+$stateDir = Join-Path $env:ProgramData 'Swiss Army VPN'
 $statePath = Join-Path $stateDir 'install-state.json'
 $ownershipFileName = 'install-ownership.json'
 $powershellPath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
-$uninstallKey = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Switzerland VPN Widget'
+$uninstallKey = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Swiss Army VPN Widget'
 $ruleNames = @(
-    'Switzerland VPN Kill Switch - Wired IPv4'
-    'Switzerland VPN Kill Switch - Wired IPv6'
-    'Switzerland VPN Kill Switch - Wireless IPv4'
-    'Switzerland VPN Kill Switch - Wireless IPv6'
+    'Swiss Army VPN Kill Switch - Wired IPv4'
+    'Swiss Army VPN Kill Switch - Wired IPv6'
+    'Swiss Army VPN Kill Switch - Wireless IPv4'
+    'Swiss Army VPN Kill Switch - Wireless IPv6'
 )
 
 function Test-Administrator {
@@ -73,7 +73,7 @@ function Get-SafeInstallDirectory {
         }
     }
     catch {
-        throw 'The saved install location is not a Switzerland VPN folder on a local fixed drive. Nothing was removed.'
+        throw 'The saved install location is not a Swiss Army VPN folder on a local fixed drive. Nothing was removed.'
     }
 
     return $fullPath
@@ -172,7 +172,7 @@ function Get-ValidatedInstallState {
         -not [string]::Equals([string]$state.FirewallRuleGroup, $ruleGroup, [StringComparison]::Ordinal) -or
         -not [string]::Equals([string]$state.CertificateThumbprint, $certificateThumbprint, [StringComparison]::OrdinalIgnoreCase) -or
         [string]$state.ServerAddress -notmatch '(?i)^ch[0-9]+\.nordvpn\.com$') {
-        throw 'The installation ownership record does not match this Switzerland VPN package. Nothing was removed.'
+        throw 'The installation ownership record does not match this Swiss Army VPN package. Nothing was removed.'
     }
 
     $hasInstallId = (
@@ -208,7 +208,7 @@ function Get-ValidatedInstallState {
     return [pscustomobject]@{
         State = $state
         InstallDirectory = $validatedInstallDir
-        AppPath = Join-Path $validatedInstallDir 'Switzerland VPN.exe'
+        AppPath = Join-Path $validatedInstallDir 'Swiss Army VPN.exe'
         IsLegacy = -not $hasInstallId
     }
 }
@@ -243,7 +243,7 @@ function Remove-AndVerifyKillSwitchRules {
     $remaining = @(Get-ManagedFirewallRules)
     if ($remaining.Count -gt 0) {
         $detail = if ([string]::IsNullOrWhiteSpace($helperFailure)) { '' } else { "`r`n`r`nHelper detail: $helperFailure" }
-        throw "Uninstall stopped because Windows did not remove every Switzerland kill-switch rule. Emergency recovery and uninstall registration were kept.$detail"
+        throw "Uninstall stopped because Windows did not remove every Swiss Army VPN kill-switch rule. Emergency recovery and uninstall registration were kept.$detail"
     }
 }
 
@@ -304,10 +304,10 @@ function Remove-VerifiedShortcutSet {
         [string]$ProgramsDirectory
     )
 
-    $startFolder = Join-Path $ProgramsDirectory 'Switzerland VPN'
+    $startFolder = Join-Path $ProgramsDirectory 'Swiss Army VPN'
     $definitions = @(
-        [pscustomobject]@{ Path = (Join-Path $DesktopDirectory 'Switzerland VPN.lnk'); Target = $appPath; Arguments = '' }
-        [pscustomobject]@{ Path = (Join-Path $startFolder 'Switzerland VPN.lnk'); Target = $appPath; Arguments = '' }
+        [pscustomobject]@{ Path = (Join-Path $DesktopDirectory 'Swiss Army VPN.lnk'); Target = $appPath; Arguments = '' }
+        [pscustomobject]@{ Path = (Join-Path $startFolder 'Swiss Army VPN.lnk'); Target = $appPath; Arguments = '' }
         [pscustomobject]@{
             Path = Join-Path $startFolder 'Emergency Unlock.lnk'
             Target = Join-Path $installDir 'Emergency Unlock.exe'
@@ -316,12 +316,12 @@ function Remove-VerifiedShortcutSet {
         [pscustomobject]@{
             Path = Join-Path $startFolder 'Choose Swiss VPN Server.lnk'
             Target = $powershellPath
-            Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $installDir 'Switch Switzerland VPN Server.ps1')`""
+            Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $installDir 'Switch Swiss Army VPN Server.ps1')`""
         }
         [pscustomobject]@{
-            Path = Join-Path $startFolder 'Uninstall Switzerland VPN.lnk'
+            Path = Join-Path $startFolder 'Uninstall Swiss Army VPN.lnk'
             Target = $powershellPath
-            Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $installDir 'Uninstall Switzerland VPN.ps1')`""
+            Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $installDir 'Uninstall Swiss Army VPN.ps1')`""
         }
     )
 
@@ -339,7 +339,7 @@ function Remove-VerifiedShortcutSet {
 
 function Stop-InstalledApp {
     $running = @(
-        Get-Process -Name 'Switzerland VPN' -ErrorAction SilentlyContinue |
+        Get-Process -Name 'Swiss Army VPN' -ErrorAction SilentlyContinue |
             Where-Object {
                 try {
                     $_.Path -and
@@ -376,13 +376,13 @@ function Remove-OwnedVpnProfile {
         [string]$State.ServerAddress,
         [StringComparison]::OrdinalIgnoreCase
     )) {
-        throw 'The Switzerland VPN profile was changed after installation. Uninstall stopped before deleting that profile or the recovery files.'
+        throw 'The Swiss Army VPN profile was changed after installation. Uninstall stopped before deleting that profile or the recovery files.'
     }
 
     & "$env:SystemRoot\System32\rasdial.exe" $vpnName /disconnect 2>&1 | Out-Null
     Remove-VpnConnection -Name $vpnName -AllUserConnection -Force
     if (Get-VpnConnection -Name $vpnName -AllUserConnection -ErrorAction SilentlyContinue) {
-        throw 'Windows did not remove the package-owned Switzerland VPN profile. Recovery files were kept.'
+        throw 'Windows did not remove the package-owned Swiss Army VPN profile. Recovery files were kept.'
     }
 }
 
@@ -397,7 +397,7 @@ function Remove-InstallDirectorySafely {
 
     $backupDir = Join-Path $stateDir 'uninstall-recovery'
     New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
-    $recoveryFiles = @('Emergency Unlock.ps1', 'Uninstall Switzerland VPN.ps1', $ownershipFileName)
+    $recoveryFiles = @('Emergency Unlock.ps1', 'Uninstall Swiss Army VPN.ps1', $ownershipFileName)
     foreach ($name in $recoveryFiles) {
         $source = Join-Path $installDir $name
         if (Test-Path -LiteralPath $source -PathType Leaf) {
@@ -446,12 +446,12 @@ if (-not (Test-Administrator)) {
     catch {
         if ($_.Exception -is [ComponentModel.Win32Exception] -and $_.Exception.NativeErrorCode -eq 1223) {
             Show-UninstallMessage -Message 'Uninstall was canceled. Nothing was removed.' `
-                -Title 'Switzerland VPN Uninstall Canceled' -Icon Information
+                -Title 'Swiss Army VPN Uninstall Canceled' -Icon Information
             exit 0
         }
 
         Show-UninstallMessage -Message "Windows could not open the Administrator approval prompt.`r`n`r`n$($_.Exception.Message)" `
-            -Title 'Switzerland VPN Uninstall Stopped' -Icon Error
+            -Title 'Swiss Army VPN Uninstall Stopped' -Icon Error
         exit 2
     }
 }
@@ -464,13 +464,13 @@ try {
     Set-Location -LiteralPath $env:SystemRoot
 }
 catch {
-    Show-UninstallMessage -Message $_.Exception.Message -Title 'Switzerland VPN Uninstall Stopped' -Icon Error
+    Show-UninstallMessage -Message $_.Exception.Message -Title 'Swiss Army VPN Uninstall Stopped' -Icon Error
     exit 2
 }
 
 $answer = [Windows.Forms.MessageBox]::Show(
-    "Remove Switzerland VPN, its profile, four firewall rules, and shortcuts?`r`n`r`nThe shared NordVPN Root CA will remain installed.",
-    'Uninstall Switzerland VPN',
+    "Remove Swiss Army VPN, its profile, four firewall rules, and shortcuts?`r`n`r`nThe shared NordVPN Root CA will remain installed.",
+    'Uninstall Swiss Army VPN',
     [Windows.Forms.MessageBoxButtons]::YesNo,
     [Windows.Forms.MessageBoxIcon]::Warning,
     [Windows.Forms.MessageBoxDefaultButton]::Button2
@@ -501,7 +501,7 @@ try {
     }
 
     Show-UninstallMessage `
-        -Message 'Switzerland VPN was removed. Its kill switch is off, and the shared NordVPN Root CA was left installed.' `
+        -Message 'Swiss Army VPN was removed. Its kill switch is off, and the shared NordVPN Root CA was left installed.' `
         -Title 'Uninstall Complete' `
         -Icon Information
 }

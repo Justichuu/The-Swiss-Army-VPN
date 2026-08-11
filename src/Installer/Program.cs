@@ -4,11 +4,11 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows.Forms;
 
-namespace SwitzerlandVpn.Installer
+namespace SwissArmyVpn.Installer
 {
     internal static class Program
     {
-        private const string DialogTitle = "Switzerland VPN Installer";
+        private const string DialogTitle = "Swiss Army VPN Installer";
         private static InstallerStatus status = InstallerStatus.Starting;
 
         [STAThread]

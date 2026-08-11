@@ -20,5 +20,5 @@ credentials.txt
 # Workspace-only files
 work/
 outputs/
-SwitzerlandVPN.cpu-probe.cs
-SwitzerlandVPN.monitor-probe.cs
+SwissArmyVPN.cpu-probe.cs
+SwissArmyVPN.monitor-probe.cs

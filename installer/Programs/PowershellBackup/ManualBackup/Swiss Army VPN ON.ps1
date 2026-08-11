@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 
-$ruleGroup = 'Switzerland VPN Kill Switch'
+$ruleGroup = 'Swiss Army VPN Kill Switch'
 $scriptFolder = Split-Path -Parent $PSCommandPath
 $profileFile = Join-Path $scriptFolder 'VPN Profile.txt'
 
@@ -85,7 +85,7 @@ Get-NetFirewallRule -Group $ruleGroup -ErrorAction SilentlyContinue | Remove-Net
 if ((Get-ManagedVpnConnection).ConnectionStatus -ne 'Connected') {
     & rasdial.exe $vpnName
     if ($LASTEXITCODE -ne 0) {
-        throw 'Switzerland failed to connect. The kill switch was not enabled.'
+        throw 'Swiss Army VPN failed to connect. The kill switch was not enabled.'
     }
 }
 
@@ -94,7 +94,7 @@ $blockedIPv4 = Get-IPv4Complement -AllowedAddresses $serverAddresses
 try {
     foreach ($interfaceType in 'Wired', 'Wireless') {
         New-NetFirewallRule `
-            -DisplayName "Switzerland kill switch - block $interfaceType IPv4" `
+            -DisplayName "Swiss Army VPN kill switch - block $interfaceType IPv4" `
             -Group $ruleGroup `
             -Direction Outbound `
             -Action Block `
@@ -106,7 +106,7 @@ try {
         # Windows Firewall rejects an IPv6 /0 here. Two /1 prefixes cover the
         # complete IPv6 address space and are accepted by the NetSecurity API.
         New-NetFirewallRule `
-            -DisplayName "Switzerland kill switch - block $interfaceType IPv6" `
+            -DisplayName "Swiss Army VPN kill switch - block $interfaceType IPv6" `
             -Group $ruleGroup `
             -Direction Outbound `
             -Action Block `
@@ -125,8 +125,8 @@ catch {
 
 $status = Get-ManagedVpnConnection
 if ($status.ConnectionStatus -ne 'Connected') {
-    throw 'The VPN dropped while the kill switch was being enabled. Physical internet remains blocked; run Switzerland VPN OFF.ps1 to recover.'
+    throw 'The VPN dropped while the kill switch was being enabled. Physical internet remains blocked; run Swiss Army VPN OFF.ps1 to recover.'
 }
 
-Write-Host 'Switzerland is connected. Whole-computer kill switch is ACTIVE.' -ForegroundColor Green
-Write-Host 'If the tunnel drops, run Switzerland VPN OFF.ps1 to restore normal internet.'
+Write-Host 'Swiss Army VPN is connected. Whole-computer kill switch is ACTIVE.' -ForegroundColor Green
+Write-Host 'If the tunnel drops, run Swiss Army VPN OFF.ps1 to restore normal internet.'

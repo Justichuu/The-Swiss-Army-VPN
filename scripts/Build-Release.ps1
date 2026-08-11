@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-only
 [CmdletBinding()]
 param(
-    [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '1.4.3',
+    # Four parts on purpose. The installer rejects same-version replacement, so a single fix can
+    # need several packages; the fourth segment absorbs those without burning patch numbers.
+    [ValidatePattern('^\d+\.\d+\.\d+\.\d+$')]
+    [string]$Version = '1.5.0.0',
 
     [string]$OutputDirectory = ''
 )
@@ -59,32 +61,34 @@ else {
 $sourceDirectory = Join-Path $repositoryRoot 'src'
 $assetDirectory = Join-Path $repositoryRoot 'assets'
 $installerDirectory = Join-Path $repositoryRoot 'installer'
-$outputRoot = Get-NormalizedPath $OutputDirectory
+# Every build gets its own versioned folder so packages from different versions can never sit
+# side by side and be mistaken for each other: artifacts\builds\1.4.5\...
+$outputRoot = Get-NormalizedPath (Join-Path (Join-Path $OutputDirectory 'builds') $Version)
 $buildRoot = Join-Path $outputRoot ('.build-' + [guid]::NewGuid().ToString('N'))
-$applicationName = "Switzerland VPN Distribution $Version"
-$sourceName = "Switzerland VPN Source $Version"
+$applicationName = "Swiss Army VPN Distribution $Version"
+$sourceName = "Swiss Army VPN Source $Version"
 $applicationStage = Join-Path $buildRoot $applicationName
 $sourceStage = Join-Path $buildRoot $sourceName
 $applicationZip = Join-Path $outputRoot ($applicationName + '.zip')
 $sourceZip = Join-Path $outputRoot ($sourceName + '.zip')
 $applicationChecksum = Join-Path $outputRoot ($applicationName + ' SHA256.txt')
 $sourceChecksum = Join-Path $outputRoot ($sourceName + ' SHA256.txt')
-$releaseVerifier = Join-Path $outputRoot ("Verify Switzerland VPN Release $Version.exe")
+$releaseVerifier = Join-Path $outputRoot ("Verify Swiss Army VPN Release $Version.exe")
 $applicationOutput = Join-Path $outputRoot $applicationName
 
-$sourceCode = Join-Path $sourceDirectory 'SwitzerlandVPN.cs'
-$manifest = Join-Path $sourceDirectory 'SwitzerlandVPN.exe.manifest'
-$installerSourceCode = Join-Path $sourceDirectory 'SwitzerlandVPN.Installer.cs'
-$installerManifest = Join-Path $sourceDirectory 'SwitzerlandVPN.Installer.exe.manifest'
-$unlockSourceCode = Join-Path $sourceDirectory 'SwitzerlandVPN.EmergencyUnlock.cs'
-$unlockManifest = Join-Path $sourceDirectory 'SwitzerlandVPN.EmergencyUnlock.exe.manifest'
-$releaseVerifierSourceCode = Join-Path $sourceDirectory 'SwitzerlandVPN.ReleaseVerifier.cs'
-$releaseVerifierManifest = Join-Path $sourceDirectory 'SwitzerlandVPN.ReleaseVerifier.exe.manifest'
+$sourceCode = Join-Path $sourceDirectory 'SwissArmyVPN.cs'
+$manifest = Join-Path $sourceDirectory 'SwissArmyVPN.exe.manifest'
+$installerSourceCode = Join-Path $sourceDirectory 'SwissArmyVPN.Installer.cs'
+$installerManifest = Join-Path $sourceDirectory 'SwissArmyVPN.Installer.exe.manifest'
+$unlockSourceCode = Join-Path $sourceDirectory 'SwissArmyVPN.EmergencyUnlock.cs'
+$unlockManifest = Join-Path $sourceDirectory 'SwissArmyVPN.EmergencyUnlock.exe.manifest'
+$releaseVerifierSourceCode = Join-Path $sourceDirectory 'SwissArmyVPN.ReleaseVerifier.cs'
+$releaseVerifierManifest = Join-Path $sourceDirectory 'SwissArmyVPN.ReleaseVerifier.exe.manifest'
 $releaseVerifierBuildScript = Join-Path $repositoryRoot 'scripts\Build-ReleaseVerifier.ps1'
-$installerScript = Join-Path $installerDirectory 'Programs\PowershellBackup\Install Switzerland VPN.ps1'
-$icon = Join-Path $assetDirectory 'Switzerland VPN.ico'
-$background = Join-Path $assetDirectory 'Switzerland VPN Background.png'
-$iconPng = Join-Path $assetDirectory 'Switzerland VPN.png'
+$installerScript = Join-Path $installerDirectory 'Programs\PowershellBackup\Install Swiss Army VPN.ps1'
+$icon = Join-Path $assetDirectory 'Swiss Army VPN.ico'
+$mandala = Join-Path $assetDirectory 'Theme Mandala.jpg'
+$iconPng = Join-Path $assetDirectory 'Swiss Army VPN.png'
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 
 foreach ($requiredFile in @(
@@ -98,7 +102,7 @@ foreach ($requiredFile in @(
     $releaseVerifierManifest,
     $releaseVerifierBuildScript,
     $icon,
-    $background,
+    $mandala,
     $iconPng,
     $compiler,
     $installerScript
@@ -107,7 +111,7 @@ foreach ($requiredFile in @(
 }
 
 $escapedVersion = [regex]::Escape($Version)
-$expectedAssemblyVersion = $Version + '.0'
+$expectedAssemblyVersion = $Version
 $sourceText = Get-Content -LiteralPath $sourceCode -Raw
 if ($sourceText -notmatch
     ('AssemblyVersion\("' + [regex]::Escape($expectedAssemblyVersion) + '"\)')) {
@@ -155,10 +159,10 @@ try {
     $executableDirectory = Join-Path $applicationStage 'Programs\Executables'
     New-Item -ItemType Directory -Path $executableDirectory -Force | Out-Null
     Copy-Item -LiteralPath $icon -Destination $executableDirectory -Force
-    Copy-Item -LiteralPath $background -Destination $executableDirectory -Force
+    # The mandala is embedded in the executable, not shipped beside it, so it is not copied here.
     Copy-Item -LiteralPath $iconPng -Destination $executableDirectory -Force
 
-    $executable = Join-Path $executableDirectory 'Switzerland VPN.exe'
+    $executable = Join-Path $executableDirectory 'Swiss Army VPN.exe'
     & $compiler `
         /nologo `
         /target:winexe `
@@ -172,13 +176,14 @@ try {
         /reference:System.Net.Http.dll `
         /reference:System.Windows.Forms.dll `
         /reference:System.ServiceProcess.dll `
+        "/resource:$mandala,SwissArmyVpn.Mandala.jpg" `
         "/out:$executable" `
         $sourceCode
     if ($LASTEXITCODE -ne 0) {
         throw "C# compilation failed with exit code $LASTEXITCODE."
     }
 
-    $installerExecutable = Join-Path $applicationStage 'Install Switzerland VPN.exe'
+    $installerExecutable = Join-Path $applicationStage 'Install Swiss Army VPN.exe'
     & $compiler `
         /nologo `
         /target:winexe `
@@ -212,7 +217,7 @@ try {
         throw "Emergency Unlock compilation failed with exit code $LASTEXITCODE."
     }
 
-    $expectedFileVersion = $Version + '.0'
+    $expectedFileVersion = $Version
     $versionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($executable)
     if ($versionInfo.FileVersion -ne $expectedFileVersion -or $versionInfo.CompanyName -ne 'Justichuu') {
         throw "Built executable metadata does not match version $expectedFileVersion and publisher Justichuu."
@@ -220,13 +225,13 @@ try {
     $installerVersionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($installerExecutable)
     if ($installerVersionInfo.FileVersion -ne $expectedFileVersion -or
         $installerVersionInfo.CompanyName -ne 'Justichuu' -or
-        $installerVersionInfo.FileDescription -ne 'Switzerland VPN Installer') {
+        $installerVersionInfo.FileDescription -ne 'Swiss Army VPN Installer') {
         throw "Built installer metadata does not match version $expectedFileVersion and publisher Justichuu."
     }
     $unlockVersionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($unlockExecutable)
     if ($unlockVersionInfo.FileVersion -ne $expectedFileVersion -or
         $unlockVersionInfo.CompanyName -ne 'Justichuu' -or
-        $unlockVersionInfo.FileDescription -ne 'Switzerland VPN Emergency Unlock') {
+        $unlockVersionInfo.FileDescription -ne 'Swiss Army VPN Emergency Unlock') {
         throw "Built Emergency Unlock metadata does not match version $expectedFileVersion and publisher Justichuu."
     }
 
@@ -262,7 +267,7 @@ try {
         throw ($parseFailures -join [Environment]::NewLine)
     }
 
-    $installerValidator = Join-Path $applicationStage 'Programs\PowershellBackup\Install Switzerland VPN.ps1'
+    $installerValidator = Join-Path $applicationStage 'Programs\PowershellBackup\Install Swiss Army VPN.ps1'
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installerValidator `
         -ValidatePackageOnly `
         -InstallParentDirectory (Join-Path $env:SystemDrive 'Program Files')

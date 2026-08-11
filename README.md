@@ -1,14 +1,14 @@
 # Justichuu's Swiss Army VPN
 
-A lightweight Windows tray widget for a Switzerland IKEv2 VPN, backed by Windows' built-in VPN client.
+A lightweight Windows tray widget for a Swiss Army VPN IKEv2 VPN, backed by Windows' built-in VPN client.
 
 This project is a learning experience more than anything: an experiment in mixing vibe coding with real technical knowledge. It has already come a long way, and the goal is to keep learning how to build apps that work reliably, scale cleanly, and reach users with no known bugs.
 
-![Switzerland VPN connecting and reporting protected latency](docs/media/vpn-working-demo/vpn-working-demo.gif)
+![Swiss Army VPN connecting and reporting protected latency](docs/media/vpn-working-demo/vpn-working-demo.gif)
 
 ## What it does
 
-- Connects a managed Switzerland VPN profile.
+- Connects a managed Swiss Army VPN profile.
 - Arms a whole-computer, fail-closed Windows Firewall kill switch.
 - Shows live tunnel traffic and protected latency on demand.
 - Includes an editable Swiss server dropdown and an optional custom NordVPN-country mode.
@@ -18,11 +18,11 @@ This project is a learning experience more than anything: an experiment in mixin
 ## Install
 
 1. Open the [latest GitHub Release](https://github.com/Justichuu/The-Swiss-Army-VPN/releases/latest).
-2. Download `Switzerland VPN Distribution <VERSION>.zip`. Do not use the green **Code → Download ZIP** option; that archive contains source code, not the compiled application.
-3. Keep the matching `Switzerland VPN Source <VERSION>.zip` beside it when sharing the application.
+2. Download `Swiss Army VPN Distribution <VERSION>.zip`. Do not use the green **Code → Download ZIP** option; that archive contains source code, not the compiled application.
+3. Keep the matching `Swiss Army VPN Source <VERSION>.zip` beside it when sharing the application.
 4. Extract the distribution ZIP and keep the folder structure intact.
-5. Run `Install Switzerland VPN.exe` from the extracted folder.
-   - The installer relies on `Programs\PowershellBackup\Install Switzerland VPN.ps1` being present in the distribution.
+5. Run `Install Swiss Army VPN.exe` from the extracted folder.
+   - The installer relies on `Programs\PowershellBackup\Install Swiss Army VPN.ps1` being present in the distribution.
 6. Open the widget and choose **SET UP SIGN-IN**.
 
 Release engineering incidents and their corrective actions are documented in
@@ -36,9 +36,9 @@ The widget's editable **SERVER** dropdown lists the packaged Swiss server pool. 
 
 Disconnect and unlock before changing servers. Administrator approval is required because the switch updates the all-users Windows VPN profile, `VPN Server.txt`, and the protected installation record together. It validates DNS first and rolls all three values back if the update cannot be verified.
 
-The Start-menu **Choose Swiss VPN Server** tool remains available for automatic selection. It fetches NordVPN's current online Swiss IKEv2 list, chooses the lowest-load resolvable server, and falls back to `VPN Servers.txt` when the live service is unavailable. Advanced users can run `Switch Switzerland VPN Server.ps1 -List`, select a Swiss endpoint with `-Server ch123.nordvpn.com`, or deliberately allow another country with `-Server us1234.nordvpn.com -AllowAnyNordVpn`.
+The Start-menu **Choose Swiss VPN Server** tool remains available for automatic selection. It fetches NordVPN's current online Swiss IKEv2 list, chooses the lowest-load resolvable server, and falls back to `VPN Servers.txt` when the live service is unavailable. Advanced users can run `Switch Swiss Army VPN Server.ps1 -List`, select a Swiss endpoint with `-Server ch123.nordvpn.com`, or deliberately allow another country with `-Server us1234.nordvpn.com -AllowAnyNordVpn`.
 
-The first release containing a new package file may require one manual install because older exact-allowlist updaters reject unfamiliar files. Run `Install Switzerland VPN.exe`; subsequent compatible releases can update normally. The `.cmd` launcher remains available only as a troubleshooting fallback.
+The first release containing a new package file may require one manual install because older exact-allowlist updaters reject unfamiliar files. Run `Install Swiss Army VPN.exe`; subsequent compatible releases can update normally. The `.cmd` launcher remains available only as a troubleshooting fallback.
 
 Private updates require system-wide GitHub CLI 2.96+ and `gh auth login` with an account that can read this repository. The account approving the update must have access too. No GitHub token is stored in the app.
 
@@ -50,7 +50,7 @@ From Windows PowerShell:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\Build-Release.ps1
 ```
 
-Build output goes to `artifacts\`. The build validates PowerShell syntax, package checksums, executable metadata, and the installer payload.
+Build output goes to `artifacts\builds\<version>\` - each version gets its own folder. The build validates PowerShell syntax, package checksums, executable metadata, and the installer payload.
 
 ## Important
 

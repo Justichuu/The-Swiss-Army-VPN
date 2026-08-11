@@ -6,16 +6,16 @@ using System.IO;
 using System.Reflection;
 using System.Windows.Forms;
 
-[assembly: AssemblyTitle("Switzerland VPN Emergency Unlock")]
+[assembly: AssemblyTitle("Swiss Army VPN Emergency Unlock")]
 [assembly: AssemblyDescription("Restores normal internet access without displaying a PowerShell console.")]
 [assembly: AssemblyCompany("Justichuu")]
-[assembly: AssemblyProduct("Switzerland VPN")]
+[assembly: AssemblyProduct("Swiss Army VPN")]
 [assembly: AssemblyCopyright("Copyright (c) Justichuu")]
-[assembly: AssemblyVersion("1.4.3.0")]
-[assembly: AssemblyFileVersion("1.4.3.0")]
-[assembly: AssemblyInformationalVersion("1.4.3")]
+[assembly: AssemblyVersion("1.5.0.0")]
+[assembly: AssemblyFileVersion("1.5.0.0")]
+[assembly: AssemblyInformationalVersion("1.5.0.0")]
 
-namespace SwitzerlandVpn.EmergencyUnlock
+namespace SwissArmyVpn.EmergencyUnlock
 {
     internal enum UnlockStatus
     {
@@ -47,7 +47,7 @@ namespace SwitzerlandVpn.EmergencyUnlock
 
     internal static class Program
     {
-        private const string DialogTitle = "Switzerland VPN Emergency Unlock";
+        private const string DialogTitle = "Swiss Army VPN Emergency Unlock";
         private static UnlockStatus status = UnlockStatus.Starting;
 
         /// <summary>
@@ -110,7 +110,7 @@ namespace SwitzerlandVpn.EmergencyUnlock
             if (!File.Exists(configuration.PowerShellPath))
                 throw new InvalidOperationException("Windows PowerShell is not available on this computer.");
             if (!File.Exists(configuration.ScriptPath))
-                throw new InvalidOperationException("Emergency Unlock.ps1 is missing. Reinstall Switzerland VPN.");
+                throw new InvalidOperationException("Emergency Unlock.ps1 is missing. Reinstall Swiss Army VPN.");
         }
 
         private static int RunUnlock(UnlockConfiguration configuration)

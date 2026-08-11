@@ -2,18 +2,18 @@ $ErrorActionPreference = 'Stop'
 
 Add-Type -AssemblyName System.Windows.Forms
 
-$productName = 'Switzerland VPN'
-$vpnName = 'Switzerland VPN'
-$ruleGroup = 'Switzerland VPN Kill Switch'
+$productName = 'Swiss Army VPN'
+$vpnName = 'Swiss Army VPN'
+$ruleGroup = 'Swiss Army VPN Kill Switch'
 $certificateThumbprint = 'B0A21991007734F5E80C977DD295FFEFB5AD6229'
-$statePath = Join-Path (Join-Path $env:ProgramData 'Switzerland VPN') 'install-state.json'
+$statePath = Join-Path (Join-Path $env:ProgramData 'Swiss Army VPN') 'install-state.json'
 $ownershipFileName = 'install-ownership.json'
 $powershellPath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
 $ruleNames = @(
-    'Switzerland VPN Kill Switch - Wired IPv4'
-    'Switzerland VPN Kill Switch - Wired IPv6'
-    'Switzerland VPN Kill Switch - Wireless IPv4'
-    'Switzerland VPN Kill Switch - Wireless IPv6'
+    'Swiss Army VPN Kill Switch - Wired IPv4'
+    'Swiss Army VPN Kill Switch - Wired IPv6'
+    'Swiss Army VPN Kill Switch - Wireless IPv4'
+    'Swiss Army VPN Kill Switch - Wireless IPv6'
 )
 
 function Test-Administrator {
@@ -89,7 +89,7 @@ function Test-OwnershipMarker {
         $markerDirectory = Get-SafeInstallDirectory ([string]$marker.InstallDirectory)
         if (-not [string]::Equals([string]$marker.ProductName, $productName, [StringComparison]::Ordinal) -or
             -not [string]::Equals($markerDirectory, $InstallDirectory, [StringComparison]::OrdinalIgnoreCase) -or
-            [string]$marker.Version -notmatch '^\d+\.\d+\.\d+$') {
+            [string]$marker.Version -notmatch '^\d+\.\d+\.\d+(\.\d+)?$') {
             return $false
         }
 
@@ -115,7 +115,7 @@ function Get-SafeHelperPath {
     try {
         $scriptDirectory = Get-SafeInstallDirectory $PSScriptRoot
         if (Test-OwnershipMarker -InstallDirectory $scriptDirectory -State $null) {
-            $siblingHelper = Join-Path $scriptDirectory 'Switzerland VPN.exe'
+            $siblingHelper = Join-Path $scriptDirectory 'Swiss Army VPN.exe'
             if (Test-Path -LiteralPath $siblingHelper -PathType Leaf) { return $siblingHelper }
         }
     }
@@ -164,7 +164,7 @@ function Get-SafeHelperPath {
             return $null
         }
 
-        $stateHelper = Join-Path $installDirectory 'Switzerland VPN.exe'
+        $stateHelper = Join-Path $installDirectory 'Swiss Army VPN.exe'
         if (Test-Path -LiteralPath $stateHelper -PathType Leaf) { return $stateHelper }
     }
     catch { }
@@ -209,7 +209,7 @@ function Remove-AndVerifyKillSwitchRules {
         $rule | Remove-NetFirewallRule -ErrorAction Stop
     }
     if (@(Get-ManagedFirewallRules).Count -ne 0) {
-        throw 'Windows did not remove every Switzerland kill-switch rule. Internet may still be blocked.'
+        throw 'Windows did not remove every Swiss Army VPN kill-switch rule. Internet may still be blocked.'
     }
 }
 
@@ -255,7 +255,7 @@ if ($disconnectWarning) {
     Show-RecoveryMessage -Message $disconnectWarning -Title 'Emergency Unlock Completed With Warning' -Icon Warning
 }
 else {
-    Show-RecoveryMessage -Message 'The Switzerland kill switch is off. Normal internet access is restored.' `
+    Show-RecoveryMessage -Message 'The Swiss Army VPN kill switch is off. Normal internet access is restored.' `
         -Title 'Emergency Unlock Complete' -Icon Information
 }
 

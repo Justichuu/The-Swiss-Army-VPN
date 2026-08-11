@@ -7,7 +7,7 @@ using System.Security.Cryptography;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
-namespace SwitzerlandVPN.ReleaseVerification
+namespace SwissArmyVPN.ReleaseVerification
 {
     internal enum VerificationStatus
     {
@@ -101,7 +101,7 @@ namespace SwitzerlandVPN.ReleaseVerification
 
         private static string[] BuildCandidateNames(string packageKind)
         {
-            string spaced = "Switzerland VPN " + packageKind + " " + EmbeddedReleaseManifest.Version + ".zip";
+            string spaced = "Swiss Army VPN " + packageKind + " " + EmbeddedReleaseManifest.Version + ".zip";
             return new[] { spaced, spaced.Replace(' ', '.') };
         }
 
@@ -184,7 +184,7 @@ namespace SwitzerlandVPN.ReleaseVerification
 
         internal VerifierForm()
         {
-            Text = "Switzerland VPN Release Verifier";
+            Text = "Swiss Army VPN Release Verifier";
             ClientSize = new Size(680, 365);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
@@ -199,7 +199,7 @@ namespace SwitzerlandVPN.ReleaseVerification
                 Location = new Point(28, 24),
                 Size = new Size(624, 34),
                 Font = new Font("Segoe UI Semibold", 18F, FontStyle.Bold, GraphicsUnit.Point),
-                Text = "Verify Switzerland VPN v" + EmbeddedReleaseManifest.Version
+                Text = "Verify Swiss Army VPN v" + EmbeddedReleaseManifest.Version
             };
             Controls.Add(titleLabel);
 

@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 
-namespace SwitzerlandVpn.Installer
+namespace SwissArmyVpn.Installer
 {
     internal sealed class InstallerConfiguration
     {
@@ -27,7 +27,7 @@ namespace SwitzerlandVpn.Installer
                 packageDirectory,
                 "Programs",
                 "PowershellBackup",
-                "Install Switzerland VPN.ps1");
+                "Install Swiss Army VPN.ps1");
             if (File.Exists(primaryScript))
                 return primaryScript;
 
@@ -37,7 +37,7 @@ namespace SwitzerlandVpn.Installer
                 "installer",
                 "Programs",
                 "PowershellBackup",
-                "Install Switzerland VPN.ps1"));
+                "Install Swiss Army VPN.ps1"));
             if (File.Exists(fallbackScript))
                 return fallbackScript;
 

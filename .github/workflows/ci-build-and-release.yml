@@ -37,9 +37,9 @@ jobs:
         with:
           name: switzerland-vpn-${{ github.sha }}
           path: |
-            artifacts/*.zip
-            artifacts/*SHA256.txt
-            artifacts/Verify*Release*.exe
+            artifacts/builds/*/*.zip
+            artifacts/builds/*/*SHA256.txt
+            artifacts/builds/*/Verify*Release*.exe
           if-no-files-found: error
 
   publish-release:
@@ -62,7 +62,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $assetFiles = @(Get-ChildItem -LiteralPath .\artifacts -File |
+          # upload-artifact strips the common parent, so the five files may arrive at the
+          # download root or under a version folder. Recurse so both layouts resolve.
+          $assetFiles = @(Get-ChildItem -LiteralPath .\artifacts -File -Recurse |
             Where-Object {
               $_.Extension -eq '.zip' -or
               $_.Name -like '*SHA256.txt' -or
@@ -76,7 +78,7 @@ jobs:
 
           gh release create $env:GITHUB_REF_NAME `
             --repo $env:GITHUB_REPOSITORY `
-            --title "Switzerland VPN $env:GITHUB_REF_NAME" `
+            --title "Swiss Army VPN $env:GITHUB_REF_NAME" `
             --generate-notes `
             --verify-tag `
             --draft

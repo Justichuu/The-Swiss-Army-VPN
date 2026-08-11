@@ -18,13 +18,13 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$vpnName = 'Switzerland VPN'
-$ruleGroup = 'Switzerland VPN Kill Switch'
+$vpnName = 'Swiss Army VPN'
+$ruleGroup = 'Swiss Army VPN Kill Switch'
 $installDirectory = Split-Path -Parent $PSCommandPath
 $serverFile = Join-Path $installDirectory 'VPN Server.txt'
 $installedPoolFile = Join-Path $installDirectory 'VPN Servers.txt'
 $packagePoolFile = Join-Path (Split-Path -Parent (Split-Path -Parent $installDirectory)) 'VPN Servers.txt'
-$stateFile = Join-Path $env:ProgramData 'Switzerland VPN\install-state.json'
+$stateFile = Join-Path $env:ProgramData 'Swiss Army VPN\install-state.json'
 $apiUri = 'https://api.nordvpn.com/v1/servers?limit=1000&filters%5Bcountry_id%5D=209'
 
 function Test-Administrator {
@@ -123,7 +123,7 @@ function Get-CandidateServers {
 function Assert-SafeToSwitch {
     $vpn = Get-VpnConnection -Name $vpnName -AllUserConnection -ErrorAction Stop
     if ($vpn.ConnectionStatus -eq 'Connected') {
-        throw 'Disconnect Switzerland VPN before changing its server.'
+        throw 'Disconnect Swiss Army VPN before changing its server.'
     }
     $rules = @(Get-NetFirewallRule -Group $ruleGroup -ErrorAction SilentlyContinue)
     if ($rules.Count -gt 0) {
@@ -181,11 +181,11 @@ function Set-ManagedServer {
             }
         }
         catch {
-            throw "The server change failed and rollback was incomplete. Reinstall Switzerland VPN before connecting. Original error: $($failure.Exception.Message)"
+            throw "The server change failed and rollback was incomplete. Reinstall Swiss Army VPN before connecting. Original error: $($failure.Exception.Message)"
         }
         throw $failure
     }
-    Write-Host "Switzerland VPN now uses $Hostname." -ForegroundColor Green
+    Write-Host "Swiss Army VPN now uses $Hostname." -ForegroundColor Green
 }
 
 if (-not $List -and -not (Test-Administrator)) {

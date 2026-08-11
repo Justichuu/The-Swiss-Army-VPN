@@ -9,10 +9,10 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
-$ruleGroup = 'Switzerland VPN Kill Switch'
+$ruleGroup = 'Swiss Army VPN Kill Switch'
 $scriptFolder = Split-Path -Parent $PSCommandPath
-$onScript = Join-Path $scriptFolder 'Switzerland VPN ON.ps1'
-$offScript = Join-Path $scriptFolder 'Switzerland VPN OFF.ps1'
+$onScript = Join-Path $scriptFolder 'Swiss Army VPN ON.ps1'
+$offScript = Join-Path $scriptFolder 'Swiss Army VPN OFF.ps1'
 $profileFile = Join-Path $scriptFolder 'VPN Profile.txt'
 
 function Get-ConfiguredVpnName {
@@ -56,19 +56,19 @@ if ($PreviewState -eq 'Live' -and -not (Test-Administrator)) {
 }
 
 if (-not (Test-Path -LiteralPath $onScript)) {
-    [Windows.Forms.MessageBox]::Show("Missing file:`n$onScript", 'Switzerland VPN', 'OK', 'Error') | Out-Null
+    [Windows.Forms.MessageBox]::Show("Missing file:`n$onScript", 'Swiss Army VPN', 'OK', 'Error') | Out-Null
     exit
 }
 
 if (-not (Test-Path -LiteralPath $offScript)) {
-    [Windows.Forms.MessageBox]::Show("Missing file:`n$offScript", 'Switzerland VPN', 'OK', 'Error') | Out-Null
+    [Windows.Forms.MessageBox]::Show("Missing file:`n$offScript", 'Swiss Army VPN', 'OK', 'Error') | Out-Null
     exit
 }
 
 [Windows.Forms.Application]::EnableVisualStyles()
 
 $form = [Windows.Forms.Form]::new()
-$form.Text = 'Switzerland VPN'
+$form.Text = 'Swiss Army VPN'
 $form.ClientSize = [Drawing.Size]::new(360, 225)
 $form.MinimumSize = [Drawing.Size]::new(376, 264)
 $form.MaximumSize = [Drawing.Size]::new(376, 264)
@@ -212,7 +212,7 @@ function Update-WidgetStatus {
         elseif ($current.Connected -and $current.KillSwitchActive) {
             $statusDot.ForeColor = [Drawing.Color]::FromArgb(57, 206, 136)
             $statusLabel.Text = 'CONNECTED AND PROTECTED'
-            $detailLabel.Text = 'Switzerland VPN is active. The kill switch is armed.'
+            $detailLabel.Text = 'Swiss Army VPN is active. The kill switch is armed.'
         }
         elseif ($current.Connected) {
             $statusDot.ForeColor = [Drawing.Color]::FromArgb(244, 178, 65)
@@ -249,7 +249,7 @@ function Invoke-WidgetAction([string]$scriptPath) {
     catch {
         [Windows.Forms.MessageBox]::Show(
             $_.Exception.Message,
-            'Switzerland VPN',
+            'Swiss Army VPN',
             [Windows.Forms.MessageBoxButtons]::OK,
             [Windows.Forms.MessageBoxIcon]::Error
         ) | Out-Null
@@ -290,7 +290,7 @@ $form.Add_FormClosing({
         if ($current.KillSwitchActive) {
             $answer = [Windows.Forms.MessageBox]::Show(
                 'The kill switch is still armed. Closing this widget will NOT unblock the internet. Close anyway?',
-                'Switzerland VPN',
+                'Swiss Army VPN',
                 [Windows.Forms.MessageBoxButtons]::YesNo,
                 [Windows.Forms.MessageBoxIcon]::Warning
             )

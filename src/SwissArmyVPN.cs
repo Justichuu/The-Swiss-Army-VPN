@@ -21,39 +21,39 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
-[assembly: System.Reflection.AssemblyTitle("Switzerland VPN")]
-[assembly: System.Reflection.AssemblyDescription("Switzerland VPN kill-switch widget")]
+[assembly: System.Reflection.AssemblyTitle("Swiss Army VPN")]
+[assembly: System.Reflection.AssemblyDescription("Swiss Army VPN kill-switch widget")]
 [assembly: System.Reflection.AssemblyCompany("Justichuu")]
-[assembly: System.Reflection.AssemblyProduct("Switzerland VPN")]
+[assembly: System.Reflection.AssemblyProduct("Swiss Army VPN")]
 [assembly: System.Reflection.AssemblyCopyright("Copyright 2026 Justichuu")]
-[assembly: System.Reflection.AssemblyVersion("1.4.3.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.4.3.0")]
-[assembly: System.Reflection.AssemblyInformationalVersion("1.4.3.0")]
+[assembly: System.Reflection.AssemblyVersion("1.5.0.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.5.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersion("1.5.0.0")]
 
-namespace SwitzerlandVpn
+namespace SwissArmyVpn
 {
     internal static class AppConfig
     {
-        internal const string VpnName = "Switzerland VPN";
-        internal const string RuleGroup = "Switzerland VPN Kill Switch";
+        internal const string VpnName = "Swiss Army VPN";
+        internal const string RuleGroup = "Swiss Army VPN Kill Switch";
         internal const string Publisher = "Justichuu";
         // The project handle changed because I got bored; keep the old publisher only for safe upgrades.
         internal const string LegacyPublisher = "Jaye";
         internal const string DefaultServer = "ch221.nordvpn.com";
-        internal const string CurrentVersion = "1.4.3";
+        internal const string CurrentVersion = "1.5.0.0";
         internal const string GitHubRepository = "Justichuu/The-Swiss-Army-VPN";
         internal const string RepositoryUrl = "https://github.com/Justichuu/The-Swiss-Army-VPN";
-        internal const string UpdateScriptName = "Update Switzerland VPN.ps1";
-        internal const string ServerSwitcherScriptName = "Switch Switzerland VPN Server.ps1";
+        internal const string UpdateScriptName = "Update Swiss Army VPN.ps1";
+        internal const string ServerSwitcherScriptName = "Switch Swiss Army VPN Server.ps1";
         internal const string RuleDescriptionPrefix =
-            "Switzerland VPN fail-closed rule. Allowed server IPv4 addresses: ";
+            "Swiss Army VPN fail-closed rule. Allowed server IPv4 addresses: ";
 
         internal static readonly string[] RuleNames =
         {
-            "Switzerland VPN Kill Switch - Wired IPv4",
-            "Switzerland VPN Kill Switch - Wired IPv6",
-            "Switzerland VPN Kill Switch - Wireless IPv4",
-            "Switzerland VPN Kill Switch - Wireless IPv6"
+            "Swiss Army VPN Kill Switch - Wired IPv4",
+            "Swiss Army VPN Kill Switch - Wired IPv6",
+            "Swiss Army VPN Kill Switch - Wireless IPv4",
+            "Swiss Army VPN Kill Switch - Wireless IPv6"
         };
 
         internal static string ServerHost
@@ -86,12 +86,12 @@ namespace SwitzerlandVpn
         {
             get
             {
-                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"Software\Justichuu\Switzerland VPN"))
+                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"Software\Justichuu\Swiss Army VPN"))
                     return key != null && Convert.ToInt32(key.GetValue("AllowAnyNordVpnServer", 0), CultureInfo.InvariantCulture) == 1;
             }
             set
             {
-                using (RegistryKey key = Registry.CurrentUser.CreateSubKey(@"Software\Justichuu\Switzerland VPN"))
+                using (RegistryKey key = Registry.CurrentUser.CreateSubKey(@"Software\Justichuu\Swiss Army VPN"))
                 {
                     if (key == null) throw new InvalidOperationException("Windows could not save the server selection mode.");
                     key.SetValue("AllowAnyNordVpnServer", value ? 1 : 0, RegistryValueKind.DWord);
@@ -230,7 +230,7 @@ namespace SwitzerlandVpn
                     !string.Equals(Path.GetFileName(installDirectory), AppConfig.VpnName, StringComparison.Ordinal))
                 {
                     throw new InvalidOperationException(
-                        "Update recovery must be started by the installed Switzerland VPN app.");
+                        "Update recovery must be started by the installed Swiss Army VPN app.");
                 }
 
                 string root = Path.GetPathRoot(installDirectory);
@@ -327,7 +327,7 @@ namespace SwitzerlandVpn
             {
                 throw new InvalidOperationException(
                     "A system-wide GitHub CLI is not installed. Install it with winget install --id GitHub.cli, " +
-                    "reopen Switzerland VPN, then try again.");
+                    "reopen Swiss Army VPN, then try again.");
             }
 
             ProcessResult cliVersion = RunProcess(
@@ -349,7 +349,7 @@ namespace SwitzerlandVpn
             {
                 throw new InvalidOperationException(
                     "GitHub CLI 2.96 or newer is required. Update it with winget upgrade --id GitHub.cli, " +
-                    "reopen Switzerland VPN, then try again.");
+                    "reopen Swiss Army VPN, then try again.");
             }
 
             ProcessResult authentication;
@@ -412,11 +412,16 @@ namespace SwitzerlandVpn
                     "GitHub did not return a normal published release. Nothing was downloaded.");
             }
 
-            Match tag = Regex.Match(fields[0], @"^v(\d+)\.(\d+)\.(\d+)$", RegexOptions.CultureInvariant);
+            // Releases before the four-part scheme are still tagged v1.2.3, so the fourth
+            // segment stays optional and defaults to zero when a tag omits it.
+            Match tag = Regex.Match(
+                fields[0],
+                @"^v(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?$",
+                RegexOptions.CultureInvariant);
             if (!tag.Success)
             {
                 throw new InvalidOperationException(
-                    "The latest release tag is not a supported version number. Expected v1.2.3. Nothing was downloaded.");
+                    "The latest release tag is not a supported version number. Expected v1.2.3.4. Nothing was downloaded.");
             }
             if (!string.Equals(fields[1], "true", StringComparison.OrdinalIgnoreCase))
             {
@@ -427,10 +432,11 @@ namespace SwitzerlandVpn
 
             string versionText = string.Format(
                 System.Globalization.CultureInfo.InvariantCulture,
-                "{0}.{1}.{2}",
+                "{0}.{1}.{2}.{3}",
                 tag.Groups[1].Value,
                 tag.Groups[2].Value,
-                tag.Groups[3].Value);
+                tag.Groups[3].Value,
+                tag.Groups[4].Success ? tag.Groups[4].Value : "0");
             Version version;
             if (!Version.TryParse(versionText, out version))
                 throw new InvalidOperationException("The latest release version could not be read safely.");
@@ -965,7 +971,7 @@ namespace SwitzerlandVpn
             catch (Exception ex)
             {
                 throw new InvalidOperationException(
-                    "Switzerland could not take over the active VPN connections. " +
+                    "Swiss Army VPN could not take over the active VPN connections. " +
                     "The kill switch remains armed, and no VPN profile was deleted. " +
                     "Use DISCONNECT + UNLOCK to restore normal networking.\r\n\r\n" +
                     ex.Message,
@@ -1025,7 +1031,7 @@ namespace SwitzerlandVpn
             {
                 uint result = RasHangUp(match.Handle);
                 if (result != ErrorSuccess)
-                    throw new Win32Exception((int)result, "Windows could not disconnect Switzerland VPN.");
+                    throw new Win32Exception((int)result, "Windows could not disconnect Swiss Army VPN.");
             }
 
             DateTime deadline = DateTime.UtcNow.AddSeconds(12);
@@ -1035,7 +1041,7 @@ namespace SwitzerlandVpn
                 Thread.Sleep(250);
             }
 
-            throw new InvalidOperationException("Switzerland VPN is still connected after the disconnect request.");
+            throw new InvalidOperationException("Swiss Army VPN is still connected after the disconnect request.");
         }
 
         internal static void OpenSignIn(string name)
@@ -1082,7 +1088,7 @@ namespace SwitzerlandVpn
                 phonebook,
                 name,
                 identityMask | RasCredentialDefault,
-                "Windows could not clear the shared default sign-in for Switzerland VPN.");
+                "Windows could not clear the shared default sign-in for Swiss Army VPN.");
         }
 
         internal static bool HasSavedCredentials(string name)
@@ -1090,7 +1096,7 @@ namespace SwitzerlandVpn
             string phonebook = GetAllUsersPhonebook();
             if (!File.Exists(phonebook))
                 throw new InvalidOperationException(
-                    "The Switzerland VPN profile is missing. Reinstall Switzerland VPN to restore it.");
+                    "The Swiss Army VPN profile is missing. Reinstall Swiss Army VPN to restore it.");
 
             uint identityMask = RasCredentialUserName | RasCredentialPassword | RasCredentialDomain;
             return HasSavedPassword(phonebook, name, identityMask) ||
@@ -1103,10 +1109,10 @@ namespace SwitzerlandVpn
             uint result = RasGetCredentials(phonebook, name, ref credentials);
             if (result == 623)
                 throw new InvalidOperationException(
-                    "The Switzerland VPN profile is missing. Reinstall Switzerland VPN to restore it.");
+                    "The Swiss Army VPN profile is missing. Reinstall Swiss Army VPN to restore it.");
             if (result != ErrorSuccess)
                 throw new InvalidOperationException(
-                    "Windows could not check whether Switzerland VPN has a saved sign-in. " +
+                    "Windows could not check whether Swiss Army VPN has a saved sign-in. " +
                     "Open SET UP SIGN-IN and try again.");
             bool hasUserName = (credentials.dwMask & RasCredentialUserName) != 0 &&
                 !string.IsNullOrWhiteSpace(credentials.szUserName);
@@ -1170,7 +1176,7 @@ namespace SwitzerlandVpn
             {
                 case 703:
                     return
-                        "Switzerland VPN does not have a usable saved sign-in.\r\n\r\n" +
+                        "Swiss Army VPN does not have a usable saved sign-in.\r\n\r\n" +
                         "Choose SET UP SIGN-IN, enter the NordVPN manual service username and password, " +
                         "and save them. Then try " + actionName + " again. Ask Justichuu if you need the credentials." + recovery;
                 case 691:
@@ -1180,7 +1186,7 @@ namespace SwitzerlandVpn
                         "NordVPN manual service credentials." + recovery;
                 case 623:
                     return
-                        "The Switzerland VPN profile is missing. Reinstall Switzerland VPN to restore it." + recovery;
+                        "The Swiss Army VPN profile is missing. Reinstall Swiss Army VPN to restore it." + recovery;
                 case 633:
                 case 756:
                 case 910:
@@ -1189,27 +1195,27 @@ namespace SwitzerlandVpn
                         "and try again." + recovery;
                 case 809:
                     return
-                        "Windows could not reach the Switzerland VPN server." + recovery +
+                        "Windows could not reach the Swiss Army VPN server." + recovery +
                         normalInternetCheck + " Then check the router or " +
                         "firewall before trying again.";
                 case 868:
                     return
-                        "Windows could not find the configured Switzerland VPN server." + recovery +
+                        "Windows could not find the configured Swiss Army VPN server." + recovery +
                         normalInternetCheck + " If it does, reinstall " +
-                        "Switzerland VPN or check its server setting.";
+                        "Swiss Army VPN or check its server setting.";
                 case 812:
                     return
-                        "The VPN server refused the connection settings or account policy. Reinstall Switzerland VPN " +
+                        "The VPN server refused the connection settings or account policy. Reinstall Swiss Army VPN " +
                         "and try again. Ask Justichuu if it still fails." + recovery;
                 case 13801:
                     return
-                        "Windows could not verify the VPN server's security credentials. Reinstall Switzerland VPN " +
+                        "Windows could not verify the VPN server's security credentials. Reinstall Swiss Army VPN " +
                         "to restore its certificate and profile settings, then try again." + recovery;
             }
 
             string message = code > 0
-                ? "Windows could not connect to Switzerland VPN (error " + code + ")."
-                : "Windows could not connect to Switzerland VPN.";
+                ? "Windows could not connect to Swiss Army VPN (error " + code + ")."
+                : "Windows could not connect to Swiss Army VPN.";
             return message + recovery;
         }
 
@@ -1446,7 +1452,7 @@ namespace SwitzerlandVpn
 
             FirewallRuleState remaining = GetStoredRuleState();
             if (remaining.Found != 0)
-                throw new InvalidOperationException("Windows did not remove every Switzerland kill-switch rule.");
+                throw new InvalidOperationException("Windows did not remove every Swiss Army VPN kill-switch rule.");
         }
 
         private static void AddRule(
@@ -1499,7 +1505,7 @@ namespace SwitzerlandVpn
                 .ToArray();
 
             if (allowed.Length == 0)
-                throw new InvalidOperationException("The Switzerland server did not resolve to a usable IPv4 address.");
+                throw new InvalidOperationException("The Swiss Army VPN server did not resolve to a usable IPv4 address.");
 
             List<string> ranges = new List<string>();
             ulong start = 0;
@@ -1648,9 +1654,17 @@ namespace SwitzerlandVpn
                     "Swiss-only mode accepts ch<number>.nordvpn.com servers. Enable Any NordVPN to use another country.");
             return normalized;
         }
+        /// <summary>
+        /// Windows Firewall rules can only be scoped to wired, wireless, or remote-access adapters,
+        /// so any other adapter carrying traffic sits outside the managed block rules. IPv6
+        /// transition tunnels are reported separately: they are always-on Windows features that
+        /// cannot be "disconnected", so the message has to say how to switch them off instead.
+        /// </summary>
         internal static void AssertSupportedEgress()
         {
             List<string> unsupported = new List<string>();
+            List<string> transitionTunnels = new List<string>();
+            List<string> transitionCommands = new List<string>();
             bool hasActiveRasConnection = RasManager.GetConnections().Count > 0;
             foreach (NetworkInterface adapter in NetworkInterface.GetAllNetworkInterfaces())
             {
@@ -1671,14 +1685,63 @@ namespace SwitzerlandVpn
                 bool activeRasVpn = adapter.NetworkInterfaceType == NetworkInterfaceType.Ppp &&
                     hasActiveRasConnection;
 
-                if (!handled && !harmless && !activeRasVpn)
+                if (handled || harmless || activeRasVpn) continue;
+
+                string transitionTunnelName = GetTransitionTunnelName(adapter);
+                if (transitionTunnelName != null)
+                {
+                    string disableCommand = "netsh interface " + transitionTunnelName + " set state disabled";
+                    transitionCommands.Add(disableCommand);
+                    transitionTunnels.Add(adapter.Name + "\r\n    " + disableCommand);
+                }
+                else
+                {
                     unsupported.Add(adapter.Name + " (type " + type + ")");
+                }
             }
 
+            if (transitionTunnels.Count == 0 && unsupported.Count == 0) return;
+
+            StringBuilder message = new StringBuilder();
+            if (transitionTunnels.Count > 0)
+                message.Append(
+                    "Windows is running an IPv6 transition tunnel. It carries internet traffic on a route the " +
+                    "kill switch cannot cover, so Swiss Army VPN will not arm while it is switched on. Open " +
+                    "Command Prompt as administrator, run the command below, then try again:\r\n\r\n" +
+                    string.Join("\r\n\r\n", transitionTunnels) +
+                    "\r\n\r\nTo switch it back on later, run the same command with \"default\" in place of " +
+                    "\"disabled\".");
+
             if (unsupported.Count > 0)
-                throw new InvalidOperationException(
+            {
+                if (message.Length > 0) message.Append("\r\n\r\n");
+                message.Append(
                     "The kill switch cannot safely classify this active internet adapter. " +
-                    "Disconnect it before arming Switzerland:\r\n\r\n" + string.Join("\r\n", unsupported));
+                    "Disconnect it before arming Swiss Army VPN:\r\n\r\n" + string.Join("\r\n", unsupported));
+            }
+
+            if (transitionCommands.Count > 0)
+                throw new CommandRequiredException(
+                    message.ToString(),
+                    string.Join("\r\n", transitionCommands.ToArray()));
+
+            throw new InvalidOperationException(message.ToString());
+        }
+
+        /// <summary>
+        /// Returns the netsh context name for a recognised IPv6 transition tunnel, or null when the
+        /// adapter is some other kind of tunnel that the user has to deal with themselves.
+        /// </summary>
+        private static string GetTransitionTunnelName(NetworkInterface adapter)
+        {
+            if (adapter.NetworkInterfaceType != NetworkInterfaceType.Tunnel) return null;
+
+            string text = ((adapter.Name ?? string.Empty) + " " + (adapter.Description ?? string.Empty))
+                .ToLowerInvariant();
+            if (text.Contains("teredo")) return "teredo";
+            if (text.Contains("isatap")) return "isatap";
+            if (text.Contains("6to4")) return "6to4";
+            return null;
         }
 
         internal static IPAddress[] ResolveAndValidateServer(string host)
@@ -1697,7 +1760,7 @@ namespace SwitzerlandVpn
             catch (System.Net.Sockets.SocketException ex)
             {
                 throw new InvalidOperationException(
-                    "Windows could not look up the Switzerland VPN server. Check that normal internet and DNS work, " +
+                    "Windows could not look up the Swiss Army VPN server. Check that normal internet and DNS work, " +
                     "then try again. The kill switch was not changed.",
                     ex);
             }
@@ -2181,7 +2244,7 @@ namespace SwitzerlandVpn
                 CancellationToken requestToken = requestCancellation.Token;
                 request.Headers.TryAddWithoutValidation(
                     "User-Agent",
-                    "Switzerland-VPN/" + AppConfig.CurrentVersion + " leak-monitor");
+                    "Swiss-Army-VPN/" + AppConfig.CurrentVersion + " leak-monitor");
                 request.Headers.TryAddWithoutValidation("Cache-Control", "no-cache, no-store");
                 bool responseReceived = false;
                 try
@@ -2267,37 +2330,386 @@ namespace SwitzerlandVpn
         }
     }
 
+    /// <summary>
+    /// A failure the user can only clear by running a command. The command travels with the
+    /// exception so the dialog can put it on the clipboard instead of asking anyone to retype it.
+    /// </summary>
+    internal sealed class CommandRequiredException : InvalidOperationException
+    {
+        internal readonly string Command;
+
+        internal CommandRequiredException(string message, string command) : base(message)
+        {
+            Command = command;
+        }
+    }
+
+    /// <summary>
+    /// An error dialog that carries a copyable command. The command is placed on the clipboard as
+    /// the dialog appears, and the button repeats that on demand in case another application took
+    /// the clipboard first.
+    /// </summary>
+    internal sealed class CommandFailureDialog : Form
+    {
+        private const int ContentWidth = 430;
+
+        private readonly string command;
+        private readonly Label statusLabel;
+
+        private CommandFailureDialog(string title, string message, string commandText)
+        {
+            command = commandText;
+
+            Label messageLabel = new Label
+            {
+                Location = new Point(72, 20),
+                Size = new Size(ContentWidth, 10),
+                AutoSize = false,
+                Text = message
+            };
+            messageLabel.Height = TextRenderer.MeasureText(
+                message,
+                messageLabel.Font,
+                new Size(ContentWidth, 0),
+                TextFormatFlags.WordBreak).Height + 8;
+
+            statusLabel = new Label
+            {
+                Location = new Point(72, messageLabel.Bottom + 12),
+                Size = new Size(ContentWidth, 20),
+                AutoSize = false,
+                ForeColor = SystemColors.GrayText
+            };
+
+            Button copyButton = new Button
+            {
+                Text = "Copy Command",
+                Size = new Size(130, 27),
+                Location = new Point(72 + ContentWidth - 130 - 88, statusLabel.Bottom + 12)
+            };
+            copyButton.Click += delegate { CopyCommand(); };
+
+            Button okButton = new Button
+            {
+                Text = "OK",
+                Size = new Size(80, 27),
+                Location = new Point(72 + ContentWidth - 80, statusLabel.Bottom + 12),
+                DialogResult = DialogResult.OK
+            };
+
+            Text = title;
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            StartPosition = FormStartPosition.CenterParent;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            ShowInTaskbar = false;
+            AcceptButton = okButton;
+            CancelButton = okButton;
+            ClientSize = new Size(72 + ContentWidth + 20, okButton.Bottom + 16);
+            Controls.Add(messageLabel);
+            Controls.Add(statusLabel);
+            Controls.Add(copyButton);
+            Controls.Add(okButton);
+        }
+
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            CopyCommand();
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            e.Graphics.DrawIcon(SystemIcons.Error, 20, 20);
+        }
+
+        /// <summary>
+        /// Windows hands the clipboard to one process at a time, so a copy can genuinely fail.
+        /// The dialog says which happened rather than claiming a copy that did not occur.
+        /// </summary>
+        private void CopyCommand()
+        {
+            try
+            {
+                Clipboard.SetText(command);
+                statusLabel.Text = "Command copied to the clipboard.";
+            }
+            catch (ExternalException)
+            {
+                statusLabel.Text = "Windows would not share the clipboard. Type the command instead.";
+            }
+        }
+
+        internal static void Show(IWin32Window owner, string title, string message, string command)
+        {
+            using (CommandFailureDialog dialog = new CommandFailureDialog(title, message, command))
+                dialog.ShowDialog(owner);
+        }
+    }
+
+    /// <summary>What the eye is saying about whether traffic is observable.</summary>
+    internal enum EyeVerdict
+    {
+        Unknown,
+        Watched,
+        Hidden
+    }
+
+    /// <summary>
+    /// The centre piece: a symmetric mandala with a vector eye over it. The eye is shut when
+    /// traffic cannot be observed and open when it can, and it carries the verdict colour. The
+    /// mandala is tinted to match so the whole piece reads as one state, not two.
+    /// </summary>
+    internal sealed class EyeIndicator : Control
+    {
+        private static readonly Color HiddenColor = Color.FromArgb(44, 196, 120);
+        private static readonly Color WatchedColor = Color.FromArgb(226, 68, 72);
+        private static readonly Color UnknownColor = Color.FromArgb(128, 134, 148);
+
+        private readonly Image mandala;
+        private EyeVerdict verdict = EyeVerdict.Unknown;
+
+        internal EyeIndicator()
+        {
+            SetStyle(
+                ControlStyles.AllPaintingInWmPaint |
+                ControlStyles.OptimizedDoubleBuffer |
+                ControlStyles.UserPaint |
+                ControlStyles.SupportsTransparentBackColor,
+                true);
+            BackColor = Color.Transparent;
+            TabStop = false;
+            mandala = LoadMandala();
+        }
+
+        internal EyeVerdict Verdict
+        {
+            get { return verdict; }
+            set
+            {
+                if (verdict == value) return;
+                verdict = value;
+                Invalidate();
+            }
+        }
+
+        /// <summary>
+        /// The mandala ships inside the executable, so no theme file has to survive on disk for
+        /// the centre piece to draw.
+        /// </summary>
+        private static Image LoadMandala()
+        {
+            try
+            {
+                using (Stream stream = System.Reflection.Assembly
+                    .GetExecutingAssembly()
+                    .GetManifestResourceStream("SwissArmyVpn.Mandala.jpg"))
+                {
+                    if (stream == null) return null;
+                    using (Image loaded = Image.FromStream(stream))
+                        return new Bitmap(loaded);
+                }
+            }
+            catch
+            {
+                // The eye still draws without it; only the surround is lost.
+                return null;
+            }
+        }
+
+        private Color VerdictColor
+        {
+            get
+            {
+                if (verdict == EyeVerdict.Hidden) return HiddenColor;
+                if (verdict == EyeVerdict.Watched) return WatchedColor;
+                return UnknownColor;
+            }
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics graphics = e.Graphics;
+            graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+
+            float size = Math.Min(Width, Height);
+            float centreX = Width / 2f;
+            float centreY = Height / 2f;
+            Color accent = VerdictColor;
+
+            DrawMandala(graphics, accent, size, centreX, centreY);
+
+            // Shut when traffic cannot be observed. The lid closes rather than the eye vanishing,
+            // so the two states read as the same object rather than two different icons.
+            float openness = verdict == EyeVerdict.Hidden ? 0.06f : 1f;
+            if (verdict == EyeVerdict.Unknown) openness = 0.45f;
+
+            float reach = size * 0.29f;
+            float lift = reach * 0.62f * openness;
+            DrawEye(graphics, accent, centreX, centreY, reach, lift, openness);
+        }
+
+        private void DrawMandala(Graphics graphics, Color accent, float size, float centreX, float centreY)
+        {
+            if (mandala == null) return;
+
+            float extent = size * 0.98f;
+            RectangleF target = new RectangleF(
+                centreX - (extent / 2f),
+                centreY - (extent / 2f),
+                extent,
+                extent);
+
+            // Collapse the artwork to luminance, then re-tint it to the verdict colour so a green
+            // reading never shows magenta fringing from the source art.
+            float red = accent.R / 255f;
+            float green = accent.G / 255f;
+            float blue = accent.B / 255f;
+            System.Drawing.Imaging.ColorMatrix matrix = new System.Drawing.Imaging.ColorMatrix(new float[][]
+            {
+                new float[] { 0.299f * red, 0.299f * green, 0.299f * blue, 0f, 0f },
+                new float[] { 0.587f * red, 0.587f * green, 0.587f * blue, 0f, 0f },
+                new float[] { 0.114f * red, 0.114f * green, 0.114f * blue, 0f, 0f },
+                new float[] { 0f, 0f, 0f, 0.88f, 0f },
+                new float[] { 0f, 0f, 0f, 0f, 1f }
+            });
+            using (System.Drawing.Imaging.ImageAttributes attributes =
+                new System.Drawing.Imaging.ImageAttributes())
+            {
+                attributes.SetColorMatrix(matrix);
+                graphics.DrawImage(
+                    mandala,
+                    new Rectangle((int)target.X, (int)target.Y, (int)target.Width, (int)target.Height),
+                    0, 0, mandala.Width, mandala.Height,
+                    GraphicsUnit.Pixel,
+                    attributes);
+            }
+        }
+
+        private static void DrawEye(
+            Graphics graphics,
+            Color accent,
+            float centreX,
+            float centreY,
+            float reach,
+            float lift,
+            float openness)
+        {
+            using (GraphicsPath lens = new GraphicsPath())
+            {
+                lens.AddBezier(
+                    centreX - reach, centreY,
+                    centreX - (reach * 0.5f), centreY - lift,
+                    centreX + (reach * 0.5f), centreY - lift,
+                    centreX + reach, centreY);
+                lens.AddBezier(
+                    centreX + reach, centreY,
+                    centreX + (reach * 0.5f), centreY + lift,
+                    centreX - (reach * 0.5f), centreY + lift,
+                    centreX - reach, centreY);
+                lens.CloseFigure();
+
+                if (openness > 0.2f)
+                {
+                    Region saved = graphics.Clip;
+                    graphics.SetClip(lens, CombineMode.Intersect);
+
+                    using (SolidBrush sclera = new SolidBrush(Color.FromArgb(232, 6, 8, 12)))
+                        graphics.FillPath(sclera, lens);
+
+                    float iris = reach * 0.42f;
+                    using (SolidBrush irisBrush = new SolidBrush(Color.FromArgb(216, accent)))
+                        graphics.FillEllipse(
+                            irisBrush, centreX - iris, centreY - iris, iris * 2f, iris * 2f);
+
+                    float pupil = iris * 0.46f;
+                    using (SolidBrush pupilBrush = new SolidBrush(Color.FromArgb(250, 4, 5, 8)))
+                        graphics.FillEllipse(
+                            pupilBrush, centreX - pupil, centreY - pupil, pupil * 2f, pupil * 2f);
+
+                    float glint = iris * 0.24f;
+                    using (SolidBrush glintBrush = new SolidBrush(Color.FromArgb(150, 245, 248, 255)))
+                        graphics.FillEllipse(
+                            glintBrush,
+                            centreX - (iris * 0.52f) - glint,
+                            centreY - (iris * 0.52f) - glint,
+                            glint * 2f,
+                            glint * 2f);
+
+                    graphics.Clip = saved;
+                }
+
+                using (Pen outline = new Pen(Color.FromArgb(244, accent), Math.Max(1.6f, reach * 0.1f)))
+                {
+                    outline.LineJoin = LineJoin.Round;
+                    graphics.DrawPath(outline, lens);
+                }
+            }
+
+            // Lashes only when shut, so the closed state cannot be mistaken for a thin open eye.
+            if (openness > 0.2f) return;
+            using (Pen lash = new Pen(Color.FromArgb(200, accent), Math.Max(1.2f, reach * 0.06f)))
+            {
+                lash.StartCap = LineCap.Round;
+                lash.EndCap = LineCap.Round;
+                for (int index = -2; index <= 2; index++)
+                {
+                    float offset = index * (reach * 0.34f);
+                    float drop = reach * (0.3f - (Math.Abs(index) * 0.05f));
+                    graphics.DrawLine(
+                        lash,
+                        centreX + offset,
+                        centreY + (reach * 0.06f),
+                        centreX + (offset * 1.16f),
+                        centreY + (reach * 0.06f) + drop);
+                }
+            }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && mandala != null) mandala.Dispose();
+            base.Dispose(disposing);
+        }
+    }
+
     internal sealed class VpnForm : Form
     {
         private sealed class WidgetLayout
         {
-            internal readonly Size ClientSize = new Size(418, 409);
+            // The eye band is sized from the content width divided by phi squared (352 / 2.618),
+            // and every row below it shifts down by the band plus its gap.
+            internal readonly Size ClientSize = new Size(418, 545);
             internal readonly Rectangle Title = new Rectangle(33, 24, 352, 31);
             internal readonly Rectangle StatusPrefix = new Rectangle(33, 60, 61, 23);
             internal readonly Rectangle Status = new Rectangle(101, 60, 284, 23);
             internal readonly Rectangle Detail = new Rectangle(33, 86, 352, 21);
-            internal readonly Rectangle Connect = new Rectangle(33, 112, 169, 40);
-            internal readonly Rectangle Disconnect = new Rectangle(216, 112, 169, 40);
-            internal readonly Rectangle ConnectOnly = new Rectangle(33, 158, 81, 25);
-            internal readonly Rectangle ArmOnly = new Rectangle(121, 158, 81, 25);
-            internal readonly Rectangle DisconnectOnly = new Rectangle(216, 158, 81, 25);
-            internal readonly Rectangle UnlockOnly = new Rectangle(304, 158, 81, 25);
-            internal readonly Rectangle ServerLabel = new Rectangle(33, 190, 53, 25);
-            internal readonly Rectangle Server = new Rectangle(86, 190, 211, 25);
-            internal readonly Rectangle ApplyServer = new Rectangle(304, 190, 81, 25);
-            internal readonly Rectangle AnyNordVpn = new Rectangle(33, 216, 145, 22);
-            internal readonly Rectangle CurrentServer = new Rectangle(184, 216, 201, 22);
-            internal readonly Rectangle AlwaysOnTop = new Rectangle(33, 236, 110, 30);
-            internal readonly Rectangle Monitor = new Rectangle(154, 236, 110, 30);
-            internal readonly Rectangle Refresh = new Rectangle(275, 236, 110, 30);
-            internal readonly Rectangle SignIn = new Rectangle(33, 272, 169, 30);
-            internal readonly Rectangle ClearCredentials = new Rectangle(216, 272, 169, 30);
-            internal readonly Rectangle Telemetry = new Rectangle(33, 309, 352, 19);
-            internal readonly Rectangle Route = new Rectangle(33, 329, 352, 19);
-            internal readonly Rectangle Leak = new Rectangle(33, 349, 352, 19);
-            internal readonly Rectangle Version = new Rectangle(33, 370, 48, 18);
-            internal readonly Rectangle Update = new Rectangle(88, 370, 114, 18);
-            internal readonly Rectangle Footer = new Rectangle(216, 370, 169, 18);
+            internal readonly Rectangle Eye = new Rectangle(147, 112, 124, 124);
+            internal readonly Rectangle Connect = new Rectangle(33, 248, 169, 40);
+            internal readonly Rectangle Disconnect = new Rectangle(216, 248, 169, 40);
+            internal readonly Rectangle ConnectOnly = new Rectangle(33, 294, 81, 25);
+            internal readonly Rectangle ArmOnly = new Rectangle(121, 294, 81, 25);
+            internal readonly Rectangle DisconnectOnly = new Rectangle(216, 294, 81, 25);
+            internal readonly Rectangle UnlockOnly = new Rectangle(304, 294, 81, 25);
+            internal readonly Rectangle ServerLabel = new Rectangle(33, 326, 53, 25);
+            internal readonly Rectangle Server = new Rectangle(86, 326, 211, 25);
+            internal readonly Rectangle ApplyServer = new Rectangle(304, 326, 81, 25);
+            internal readonly Rectangle AnyNordVpn = new Rectangle(33, 352, 145, 22);
+            internal readonly Rectangle CurrentServer = new Rectangle(184, 352, 201, 22);
+            internal readonly Rectangle AlwaysOnTop = new Rectangle(33, 372, 110, 30);
+            internal readonly Rectangle Monitor = new Rectangle(154, 372, 110, 30);
+            internal readonly Rectangle Refresh = new Rectangle(275, 372, 110, 30);
+            internal readonly Rectangle SignIn = new Rectangle(33, 408, 169, 30);
+            internal readonly Rectangle ClearCredentials = new Rectangle(216, 408, 169, 30);
+            internal readonly Rectangle Telemetry = new Rectangle(33, 445, 352, 19);
+            internal readonly Rectangle Route = new Rectangle(33, 465, 352, 19);
+            internal readonly Rectangle Leak = new Rectangle(33, 485, 352, 19);
+            internal readonly Rectangle Version = new Rectangle(33, 506, 48, 18);
+            internal readonly Rectangle Update = new Rectangle(88, 506, 114, 18);
+            internal readonly Rectangle Footer = new Rectangle(216, 506, 169, 18);
         }
 
         private sealed class VpnActionRequest
@@ -2327,6 +2739,7 @@ namespace SwitzerlandVpn
         private static readonly Color DisabledButtonColor = Color.FromArgb(63, 67, 76);
         private static readonly WidgetLayout Grid = new WidgetLayout();
         private readonly Image themeBackground;
+        private readonly EyeIndicator eyeIndicator;
         private readonly Label statusPrefix;
         private readonly Label statusLabel;
         private readonly Label detailLabel;
@@ -2415,7 +2828,7 @@ namespace SwitzerlandVpn
         internal VpnForm(WidgetState preview)
         {
             previewState = preview;
-            Text = "Switzerland VPN";
+            Text = "Swiss Army VPN";
             AutoScaleDimensions = new SizeF(96f, 96f);
             AutoScaleMode = AutoScaleMode.Dpi;
             FormBorderStyle = FormBorderStyle.FixedSingle;
@@ -2439,7 +2852,7 @@ namespace SwitzerlandVpn
             };
             Label title = new Label
             {
-                Text = "SWITZERLAND VPN",
+                Text = "SWISS ARMY VPN",
                 Font = new Font("Segoe UI Semibold", 14f),
                 ForeColor = Color.FromArgb(235, 238, 244),
                 BackColor = Color.Transparent,
@@ -2448,7 +2861,10 @@ namespace SwitzerlandVpn
                 Bounds = Grid.Title
             };
             Controls.Add(title);
-            RegisterToolTip(title, "Switzerland VPN controls.");
+
+            eyeIndicator = new EyeIndicator { Bounds = Grid.Eye };
+            Controls.Add(eyeIndicator);
+            RegisterToolTip(title, "Swiss Army VPN controls.");
 
             statusPrefix = new Label
             {
@@ -2739,7 +3155,7 @@ namespace SwitzerlandVpn
                 "Check the latest private GitHub release. Requires GitHub CLI sign-in.");
 
             ContextMenuStrip trayMenu = new ContextMenuStrip { ShowItemToolTips = true };
-            ToolStripMenuItem trayOpenItem = new ToolStripMenuItem("Open Switzerland VPN", null, delegate { RestoreFromTray(); })
+            ToolStripMenuItem trayOpenItem = new ToolStripMenuItem("Open Swiss Army VPN", null, delegate { RestoreFromTray(); })
             {
                 ToolTipText = "Open the VPN controls."
             };
@@ -2785,7 +3201,7 @@ namespace SwitzerlandVpn
             trayIcon = new NotifyIcon
             {
                 Icon = Icon,
-                Text = "Switzerland VPN",
+                Text = "Swiss Army VPN",
                 Visible = preview == null,
                 ContextMenuStrip = trayMenu
             };
@@ -2866,7 +3282,7 @@ namespace SwitzerlandVpn
             {
                 MessageBox.Show(
                     "Could not open the GitHub repository.\r\n\r\n" + ex.Message,
-                    "Switzerland VPN",
+                    "Swiss Army VPN",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
             }
@@ -2906,7 +3322,7 @@ namespace SwitzerlandVpn
                     string.IsNullOrWhiteSpace(failure.Message)
                         ? "The private update check failed. Nothing was downloaded."
                         : failure.Message,
-                    "Switzerland VPN Update",
+                    "Swiss Army VPN Update",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
                 return;
@@ -2916,7 +3332,7 @@ namespace SwitzerlandVpn
                 FinishUpdateOperation(UpdateCheckState.Failed);
                 MessageBox.Show(
                     "GitHub did not return release information. Nothing was downloaded.",
-                    "Switzerland VPN Update",
+                    "Swiss Army VPN Update",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
                 return;
@@ -2928,7 +3344,7 @@ namespace SwitzerlandVpn
             {
                 FinishUpdateOperation(UpdateCheckState.Idle);
                 MessageBox.Show(
-                    "Switzerland VPN v" + AppConfig.CurrentVersion + " is already current.",
+                    "Swiss Army VPN v" + AppConfig.CurrentVersion + " is already current.",
                     "No Update Needed",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
@@ -2949,7 +3365,7 @@ namespace SwitzerlandVpn
             updateCheckState = UpdateCheckState.AwaitingConfirmation;
             ApplyBusyState(currentOperation);
             DialogResult answer = MessageBox.Show(
-                "Switzerland VPN v" + release.VersionText + " is available. Download and install it now?\r\n\r\n" +
+                "Swiss Army VPN v" + release.VersionText + " is available. Download and install it now?\r\n\r\n" +
                 "The app will close. Your VPN connection and kill switch will not be changed.",
                 "Private Update Available",
                 MessageBoxButtons.YesNo,
@@ -2981,7 +3397,7 @@ namespace SwitzerlandVpn
                         FinishUpdateOperation(UpdateCheckState.Failed);
                         MessageBox.Show(
                             result.FailureMessage,
-                            "Switzerland VPN Update",
+                            "Swiss Army VPN Update",
                             MessageBoxButtons.OK,
                             MessageBoxIcon.Error);
                         return;
@@ -3009,7 +3425,7 @@ namespace SwitzerlandVpn
                 return new UpdaterHandoffResult
                 {
                     FailureMessage =
-                        "The update helper is missing. Reinstall Switzerland VPN from the latest package, then try again."
+                        "The update helper is missing. Reinstall Swiss Army VPN from the latest package, then try again."
                 };
             }
 
@@ -3017,12 +3433,12 @@ namespace SwitzerlandVpn
             string localUpdateRoot = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "Justichuu",
-                "Switzerland VPN",
+                "Swiss Army VPN",
                 "Updates",
                 transactionId);
             string protectedStatusRoot = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-                "Switzerland VPN",
+                "Swiss Army VPN",
                 "Updates",
                 transactionId);
             string readyPath = Path.Combine(protectedStatusRoot, "ready.txt");
@@ -3153,7 +3569,7 @@ namespace SwitzerlandVpn
             {
                 string safeRoot = Path.GetFullPath(Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "Justichuu", "Switzerland VPN", "Updates")).TrimEnd('\\') + "\\";
+                    "Justichuu", "Swiss Army VPN", "Updates")).TrimEnd('\\') + "\\";
                 string resolved = Path.GetFullPath(directory).TrimEnd('\\');
                 if (resolved.StartsWith(safeRoot, StringComparison.OrdinalIgnoreCase) &&
                     Regex.IsMatch(Path.GetFileName(resolved), "^[a-f0-9]{32}$", RegexOptions.CultureInvariant) &&
@@ -3175,13 +3591,13 @@ namespace SwitzerlandVpn
             string normalizedInstall = Path.GetFullPath(installDirectory).TrimEnd('\\');
             string stateDirectory = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-                "Switzerland VPN");
+                "Swiss Army VPN");
             string statePath = Path.Combine(stateDirectory, "install-state.json");
             string markerPath = Path.Combine(normalizedInstall, "install-ownership.json");
             if (!File.Exists(statePath) || !File.Exists(markerPath) || !File.Exists(updateScript))
             {
                 throw new InvalidOperationException(
-                    "Private updates require the installed copy of Switzerland VPN. Reinstall the latest package first.");
+                    "Private updates require the installed copy of Swiss Army VPN. Reinstall the latest package first.");
             }
 
             string state = File.ReadAllText(statePath);
@@ -3215,7 +3631,7 @@ namespace SwitzerlandVpn
             }
 
             using (Microsoft.Win32.RegistryKey key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
-                @"Software\Microsoft\Windows\CurrentVersion\Uninstall\Switzerland VPN Widget",
+                @"Software\Microsoft\Windows\CurrentVersion\Uninstall\Swiss Army VPN Widget",
                 false))
             {
                 if (key == null ||
@@ -3227,7 +3643,7 @@ namespace SwitzerlandVpn
                         StringComparison.OrdinalIgnoreCase))
                 {
                     throw new InvalidOperationException(
-                        "Windows does not recognize this as the installed Switzerland VPN app. Nothing was downloaded.");
+                        "Windows does not recognize this as the installed Swiss Army VPN app. Nothing was downloaded.");
                 }
             }
 
@@ -3307,39 +3723,24 @@ namespace SwitzerlandVpn
         }
 
         /// <summary>
-        /// Renders the external theme and dark readability overlay once. Reusing this client-sized
-        /// bitmap prevents telemetry label repaints from rescaling the large source image.
+        /// The window sits on flat black. The centre piece carries the theme, so the field
+        /// behind the controls is deliberately empty and every label keeps full contrast.
         /// </summary>
         private static Image LoadThemeBackground(Size clientSize)
         {
-            string path = Path.Combine(
-                AppDomain.CurrentDomain.BaseDirectory,
-                "Switzerland VPN Background.png");
-            if (!File.Exists(path)) return null;
-
             try
             {
-                using (Image source = Image.FromFile(path))
-                {
-                    Bitmap rendered = new Bitmap(
-                        clientSize.Width,
-                        clientSize.Height,
-                        System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
-                    using (Graphics graphics = Graphics.FromImage(rendered))
-                    {
-                        graphics.Clear(Color.FromArgb(24, 26, 31));
-                        graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                        graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
-                        graphics.DrawImage(source, new Rectangle(Point.Empty, clientSize));
-                        using (SolidBrush overlay = new SolidBrush(Color.FromArgb(105, 8, 10, 17)))
-                            graphics.FillRectangle(overlay, new Rectangle(Point.Empty, clientSize));
-                    }
-                    return rendered;
-                }
+                Bitmap rendered = new Bitmap(
+                    clientSize.Width,
+                    clientSize.Height,
+                    System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+                using (Graphics graphics = Graphics.FromImage(rendered))
+                    graphics.Clear(Color.Black);
+                return rendered;
             }
             catch
             {
-                // A missing or damaged optional theme must never prevent recovery controls from opening.
+                // A theme that cannot be drawn must never prevent recovery controls from opening.
                 return null;
             }
         }
@@ -3399,7 +3800,7 @@ namespace SwitzerlandVpn
                         ? "The kill switch was already active and remains active. Choose DISCONNECT + UNLOCK to restore normal internet."
                         : "This attempt did not change the VPN or kill switch.";
                     DialogResult answer = MessageBox.Show(
-                        "Sign-in has not been set up for Switzerland VPN.\r\n\r\n" +
+                        "Sign-in has not been set up for Swiss Army VPN.\r\n\r\n" +
                         "Choose Yes to arm the kill switch and open SET UP SIGN-IN. Enter the NordVPN manual " +
                         "service username and password, then connect in the Windows dialog. " +
                         "Ask Justichuu if you need the credentials.\r\n\r\n" +
@@ -3414,14 +3815,14 @@ namespace SwitzerlandVpn
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Switzerland VPN", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(ex.Message, "Swiss Army VPN", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 
             RunAction(new VpnActionRequest
             {
                 Operation = VpnOperation.Connect,
-                SuccessMessage = "Switzerland is connected and protected.",
+                SuccessMessage = "Swiss Army VPN is connected and protected.",
                 Execute = delegate
                 {
                     ArmKillSwitchAndVerify();
@@ -3452,7 +3853,7 @@ namespace SwitzerlandVpn
                 if (!RasManager.HasSavedCredentials(AppConfig.VpnName))
                 {
                     MessageBox.Show(
-                        "Sign-in has not been set up for Switzerland VPN. Choose SET UP SIGN-IN, save the NordVPN manual service credentials, then try CONNECT ONLY again.",
+                        "Sign-in has not been set up for Swiss Army VPN. Choose SET UP SIGN-IN, save the NordVPN manual service credentials, then try CONNECT ONLY again.",
                         "Sign-In Required",
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Information);
@@ -3470,7 +3871,7 @@ namespace SwitzerlandVpn
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Switzerland VPN", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(ex.Message, "Swiss Army VPN", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 
@@ -3478,20 +3879,20 @@ namespace SwitzerlandVpn
             if (!alreadyProtected)
             {
                 string warning = state.FirewallProtectionOff
-                    ? "Windows Firewall protection is off. CONNECT ONLY will start Switzerland without verified kill-switch protection. If the VPN drops, traffic may use normal internet. Continue?"
-                    : "CONNECT ONLY will start Switzerland without arming the kill switch. It will not close other VPN connections. If Switzerland drops, traffic may use normal internet. Continue?";
+                    ? "Windows Firewall protection is off. CONNECT ONLY will start Swiss Army VPN without verified kill-switch protection. If the VPN drops, traffic may use normal internet. Continue?"
+                    : "CONNECT ONLY will start Swiss Army VPN without arming the kill switch. It will not close other VPN connections. If Swiss Army VPN drops, traffic may use normal internet. Continue?";
                 if (!ConfirmPartialAction("Connect Without Arming?", warning)) return;
             }
 
             RunAction(new VpnActionRequest
             {
                 Operation = VpnOperation.ConnectOnly,
-                SuccessMessage = "Switzerland connected. Kill-switch state was not changed.",
+                SuccessMessage = "Swiss Army VPN connected. Kill-switch state was not changed.",
                 Execute = delegate
                 {
                     RasManager.Connect(AppConfig.VpnName, false);
                     if (!RasManager.IsConnected(AppConfig.VpnName))
-                        throw new InvalidOperationException("Switzerland VPN did not report a connected state.");
+                        throw new InvalidOperationException("Swiss Army VPN did not report a connected state.");
                 }
             });
         }
@@ -3507,7 +3908,7 @@ namespace SwitzerlandVpn
             try { AppConfig.AllowAnyNordVpnServer = value; }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Switzerland VPN", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(ex.Message, "Swiss Army VPN", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -3559,7 +3960,7 @@ namespace SwitzerlandVpn
                 AppConfig.ServerSwitcherScriptName);
             if (!File.Exists(scriptPath))
                 throw new InvalidOperationException(
-                    "The server-switch helper is missing. Reinstall Switzerland VPN before changing servers.");
+                    "The server-switch helper is missing. Reinstall Swiss Army VPN before changing servers.");
 
             string arguments = "-NoProfile -ExecutionPolicy Bypass -File \"" + scriptPath +
                 "\" -Server \"" + hostname + "\"" +
@@ -3614,7 +4015,7 @@ namespace SwitzerlandVpn
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Switzerland VPN", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(ex.Message, "Swiss Army VPN", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 
@@ -3627,7 +4028,7 @@ namespace SwitzerlandVpn
             {
                 Operation = VpnOperation.ArmOnly,
                 SuccessMessage = state.Connected
-                    ? "Kill switch armed. Switzerland remains connected."
+                    ? "Kill switch armed. Swiss Army VPN remains connected."
                     : "Kill switch armed. Normal internet is blocked.",
                 Execute = ArmKillSwitchAndVerify
             });
@@ -3645,19 +4046,19 @@ namespace SwitzerlandVpn
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Switzerland VPN", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(ex.Message, "Swiss Army VPN", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 
             string warning = state.KillSwitchActive && !state.FirewallProtectionOff
-                ? "DISCONNECT ONLY will stop Switzerland but leave the kill switch armed. Normal internet will remain blocked. Use CONNECT ONLY to attempt reconnection or UNLOCK ONLY to restore normal internet. Continue?"
-                : "DISCONNECT ONLY will stop Switzerland without changing firewall rules. The kill switch is not fully active, so traffic may use normal internet immediately. Continue?";
+                ? "DISCONNECT ONLY will stop Swiss Army VPN but leave the kill switch armed. Normal internet will remain blocked. Use CONNECT ONLY to attempt reconnection or UNLOCK ONLY to restore normal internet. Continue?"
+                : "DISCONNECT ONLY will stop Swiss Army VPN without changing firewall rules. The kill switch is not fully active, so traffic may use normal internet immediately. Continue?";
             if (!ConfirmPartialAction("Disconnect Without Unlocking?", warning)) return;
 
             RunAction(new VpnActionRequest
             {
                 Operation = VpnOperation.DisconnectOnly,
-                SuccessMessage = "Switzerland disconnected. Kill-switch state was not changed.",
+                SuccessMessage = "Swiss Army VPN disconnected. Kill-switch state was not changed.",
                 Execute = delegate { RasManager.Disconnect(AppConfig.VpnName); }
             });
         }
@@ -3674,13 +4075,13 @@ namespace SwitzerlandVpn
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Switzerland VPN", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(ex.Message, "Swiss Army VPN", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 
             string warning = state.Connected
-                ? "UNLOCK ONLY will remove kill-switch firewall rules and leave Switzerland connected. If the VPN drops, traffic may use normal internet. Continue?"
-                : "UNLOCK ONLY will remove the kill-switch firewall rules and restore normal internet. Switzerland will remain disconnected. Continue?";
+                ? "UNLOCK ONLY will remove kill-switch firewall rules and leave Swiss Army VPN connected. If the VPN drops, traffic may use normal internet. Continue?"
+                : "UNLOCK ONLY will remove the kill-switch firewall rules and restore normal internet. Swiss Army VPN will remain disconnected. Continue?";
             if (!ConfirmPartialAction("Unlock Without Disconnecting?", warning)) return;
 
             RunAction(new VpnActionRequest
@@ -3720,7 +4121,7 @@ namespace SwitzerlandVpn
             RunAction(new VpnActionRequest
             {
                 Operation = VpnOperation.Disconnect,
-                SuccessMessage = "Switzerland is disconnected. Normal internet is restored.",
+                SuccessMessage = "Swiss Army VPN is disconnected. Normal internet is restored.",
                 Execute = delegate
                 {
                     // Restore normal networking first, even if the tunnel is already down.
@@ -3742,7 +4143,7 @@ namespace SwitzerlandVpn
             if (!warningAlreadyAccepted)
             {
                 DialogResult answer = MessageBox.Show(
-                    "Windows may connect the VPN from its sign-in dialog. Switzerland VPN will arm the whole-computer " +
+                    "Windows may connect the VPN from its sign-in dialog. Swiss Army VPN will arm the whole-computer " +
                     "kill switch first. If you cancel sign-in, normal internet stays blocked until you choose " +
                     "DISCONNECT + UNLOCK.\r\n\r\nContinue?",
                     "Set Up Sign-In Safely?",
@@ -3816,7 +4217,7 @@ namespace SwitzerlandVpn
             }
 
             throw new InvalidOperationException(
-                "Protection could not be verified after connecting, so Switzerland VPN was disconnected. " +
+                "Protection could not be verified after connecting, so Swiss Army VPN was disconnected. " +
                 "Firewall rules remain fail-closed; use DISCONNECT + UNLOCK to restore normal internet.",
                 protectionFailure);
         }
@@ -3901,7 +4302,7 @@ namespace SwitzerlandVpn
             catch { }
 
             string confirmation =
-                "Clear the username, password, and domain saved by Windows for Switzerland VPN?\r\n\r\n" +
+                "Clear the username, password, and domain saved by Windows for Swiss Army VPN?\r\n\r\n" +
                 (connected
                     ? "The current VPN connection will stay open, but SET UP SIGN-IN will be required after it disconnects."
                     : "SET UP SIGN-IN will be required before the next connection.");
@@ -3929,7 +4330,7 @@ namespace SwitzerlandVpn
                 RasManager.ClearCurrentUserCredentials(AppConfig.VpnName);
                 if (RasManager.HasSavedCredentials(AppConfig.VpnName))
                     throw new InvalidOperationException(
-                        "Windows still reports a saved Switzerland VPN sign-in for this account. " +
+                        "Windows still reports a saved Swiss Army VPN sign-in for this account. " +
                         "Nothing was reported as cleared; try again or ask Justichuu.");
                 MessageBox.Show(
                     "The shared default sign-in and credentials saved for this Windows account are now cleared.\r\n\r\n" +
@@ -3946,7 +4347,7 @@ namespace SwitzerlandVpn
                     ? "The shared default sign-in was cleared, but the sign-in saved for this Windows account was not.\r\n\r\n" +
                       ex.Message
                     : ex.Message;
-                MessageBox.Show(message, "Switzerland VPN", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(message, "Swiss Army VPN", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally
             {
@@ -3992,17 +4393,37 @@ namespace SwitzerlandVpn
 
                     if (failure != null)
                     {
-                        MessageBox.Show(failure.Message, "Switzerland VPN", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        ShowActionFailure(failure);
                     }
                     else
                     {
-                        trayIcon.BalloonTipTitle = "Switzerland VPN";
+                        trayIcon.BalloonTipTitle = "Swiss Army VPN";
                         trayIcon.BalloonTipText = request.SuccessMessage;
                         trayIcon.BalloonTipIcon = ToolTipIcon.Info;
                         trayIcon.ShowBalloonTip(2500);
                     }
                 }));
             });
+        }
+
+        /// <summary>
+        /// Failures that can only be cleared by running a command get the copyable dialog. Every
+        /// other failure keeps the plain message box.
+        /// </summary>
+        private void ShowActionFailure(Exception failure)
+        {
+            CommandRequiredException commandFailure = failure as CommandRequiredException;
+            if (commandFailure != null)
+            {
+                CommandFailureDialog.Show(
+                    this,
+                    "Swiss Army VPN",
+                    commandFailure.Message,
+                    commandFailure.Command);
+                return;
+            }
+
+            MessageBox.Show(failure.Message, "Swiss Army VPN", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
 
         private void PauseMonitoringForAction()
@@ -5289,8 +5710,33 @@ namespace SwitzerlandVpn
         /// Maps each explicit display state to one complete set of widget and tray text, preventing
         /// contradictory labels from being assembled from independent booleans.
         /// </summary>
+        /// <summary>
+        /// The eye is shut only when nothing can observe this machine's traffic: either it is
+        /// inside the tunnel with the kill switch armed, or the kill switch is blocking everything.
+        /// Anything unproven leaves the eye open, matching the rule that a missing answer is never
+        /// treated as safety.
+        /// </summary>
+        private static EyeVerdict GetEyeVerdict(WidgetDisplayState displayState)
+        {
+            switch (displayState)
+            {
+                case WidgetDisplayState.Protected:
+                case WidgetDisplayState.InternetBlocked:
+                    return EyeVerdict.Hidden;
+                case WidgetDisplayState.Disconnected:
+                case WidgetDisplayState.ConnectedWithoutProtection:
+                case WidgetDisplayState.ProtectionIncomplete:
+                case WidgetDisplayState.FirewallProtectionOff:
+                    return EyeVerdict.Watched;
+                default:
+                    return EyeVerdict.Unknown;
+            }
+        }
+
         private void ApplyDisplayState(WidgetDisplayState displayState, WidgetState state)
         {
+            if (eyeIndicator != null) eyeIndicator.Verdict = GetEyeVerdict(displayState);
+
             switch (displayState)
             {
                 case WidgetDisplayState.Connecting:
@@ -5323,7 +5769,7 @@ namespace SwitzerlandVpn
                     return;
                 case WidgetDisplayState.Protected:
                     ApplyStatus(Color.FromArgb(57, 206, 136), "CONNECTED AND PROTECTED",
-                        "Switzerland VPN is active. The kill switch is armed.", "Connected and protected");
+                        "Swiss Army VPN is active. The kill switch is armed.", "Connected and protected");
                     return;
                 case WidgetDisplayState.ConnectedWithoutProtection:
                     ApplyStatus(Color.FromArgb(244, 178, 65), "CONNECTED, NOT PROTECTED",
@@ -5371,7 +5817,7 @@ namespace SwitzerlandVpn
         /// </summary>
         private void UpdateTrayToolTip()
         {
-            string tip = "Switzerland VPN | MON: " + (monitoringEnabled ? "ON" : "OFF") +
+            string tip = "Swiss Army VPN | MON: " + (monitoringEnabled ? "ON" : "OFF") +
                 " | " + lastTrayStatus;
             trayIcon.Text = tip.Length > 63 ? tip.Substring(0, 63) : tip;
         }
@@ -5383,7 +5829,7 @@ namespace SwitzerlandVpn
                 ClearActiveToolTip();
                 UpdateMonitoringTimerInterval();
                 Hide();
-                trayIcon.BalloonTipTitle = "Switzerland VPN";
+                trayIcon.BalloonTipTitle = "Swiss Army VPN";
                 trayIcon.BalloonTipText = "Still running in the system tray.";
                 trayIcon.BalloonTipIcon = ToolTipIcon.Info;
                 trayIcon.ShowBalloonTip(1800);
@@ -5439,7 +5885,7 @@ namespace SwitzerlandVpn
             {
                 MessageBox.Show(
                     "Wait for the current operation to finish before exiting.",
-                    "Switzerland VPN",
+                    "Swiss Army VPN",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Warning);
                 e.Cancel = true;
@@ -5454,14 +5900,14 @@ namespace SwitzerlandVpn
             catch
             {
                 warningMessage =
-                    "VPN and kill-switch status could not be verified. Exit Switzerland VPN anyway?";
+                    "VPN and kill-switch status could not be verified. Exit Swiss Army VPN anyway?";
             }
 
             if (!string.IsNullOrEmpty(warningMessage))
             {
                 DialogResult answer = MessageBox.Show(
                     warningMessage,
-                    "Exit Switzerland VPN?",
+                    "Exit Swiss Army VPN?",
                     MessageBoxButtons.YesNo,
                     MessageBoxIcon.Warning,
                     MessageBoxDefaultButton.Button2);
@@ -5488,7 +5934,7 @@ namespace SwitzerlandVpn
         private static string GetExitWarningMessage(WidgetState state)
         {
             if (state == null || !string.IsNullOrEmpty(state.Error) || state.ConnectionAmbiguous)
-                return "VPN and kill-switch status could not be verified. Exit Switzerland VPN anyway?";
+                return "VPN and kill-switch status could not be verified. Exit Swiss Army VPN anyway?";
             if (state.FirewallProtectionOff && state.ManagedRulesPresent)
             {
                 return "WARNING: Saved kill-switch rules remain while Windows Firewall is off. They may block internet " +
@@ -5500,7 +5946,7 @@ namespace SwitzerlandVpn
                     "Exit anyway?";
             }
             if (state.Connected)
-                return "Switzerland VPN is connected. Closing this app will not disconnect the VPN. Exit anyway?";
+                return "Swiss Army VPN is connected. Closing this app will not disconnect the VPN. Exit anyway?";
             return null;
         }
     }
@@ -5557,7 +6003,7 @@ namespace SwitzerlandVpn
             {
                 MessageBox.Show(
                     recovery.ErrorMessage,
-                    "Switzerland VPN Update Recovery",
+                    "Swiss Army VPN Update Recovery",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
                 return;
@@ -5568,15 +6014,15 @@ namespace SwitzerlandVpn
                 bool created;
                 using (Mutex instance = new Mutex(
                     true,
-                    "Global\\SwitzerlandVPNWidget-9F71DB12",
+                    "Global\\SwissArmyVPNWidget-9F71DB12",
                     out created))
                 {
                     if (!created)
                     {
                         MessageBox.Show(
-                            "Switzerland VPN is already running in this or another Windows session. " +
+                            "Swiss Army VPN is already running in this or another Windows session. " +
                             "Use its system-tray icon or close that copy first.",
-                            "Switzerland VPN",
+                            "Swiss Army VPN",
                             MessageBoxButtons.OK,
                             MessageBoxIcon.Information);
                         return;
@@ -5603,9 +6049,9 @@ namespace SwitzerlandVpn
         private static void ShowInstanceCoordinationError()
         {
             MessageBox.Show(
-                "Windows could not coordinate Switzerland VPN across user sessions. Another user may already have it " +
+                "Windows could not coordinate Swiss Army VPN across user sessions. Another user may already have it " +
                 "open. Close the other copy or sign out of the other session, then try again.",
-                "Switzerland VPN Could Not Start",
+                "Swiss Army VPN Could Not Start",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
         }

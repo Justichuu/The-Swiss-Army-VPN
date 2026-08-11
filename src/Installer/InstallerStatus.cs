@@ -1,4 +1,4 @@
-namespace SwitzerlandVpn.Installer
+namespace SwissArmyVpn.Installer
 {
     internal enum InstallerStatus
     {

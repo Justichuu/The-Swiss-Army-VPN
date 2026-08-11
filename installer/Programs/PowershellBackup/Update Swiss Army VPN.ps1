@@ -30,7 +30,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 Add-Type -AssemblyName System.Windows.Forms
 
-$productName = 'Switzerland VPN'
+$productName = 'Swiss Army VPN'
 $repository = 'Justichuu/The-Swiss-Army-VPN'
 $publisher = 'Justichuu'
 # The project handle changed because I got bored; accept the old publisher only for safe upgrades.
@@ -40,22 +40,21 @@ $statePath = Join-Path $stateDir 'install-state.json'
 $journalPath = Join-Path $stateDir 'update-journal.json'
 $journalPreviousPath = Join-Path $stateDir 'update-journal.previous.json'
 $ownershipFileName = 'install-ownership.json'
-$uninstallKey = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Switzerland VPN Widget'
+$uninstallKey = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Swiss Army VPN Widget'
 $powershellPath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
 $maximumPackageBytes = 100MB
-$applicationMutexName = 'Global\SwitzerlandVPNWidget-9F71DB12'
-$updaterMutexName = 'Global\SwitzerlandVPNUpdater-5DFB5198'
+$applicationMutexName = 'Global\SwissArmyVPNWidget-9F71DB12'
+$updaterMutexName = 'Global\SwissArmyVPNUpdater-5DFB5198'
 $minimumGitHubCliVersion = [version]'2.96.0'
 $managedInstallFiles = @(
     'Emergency Unlock.exe'
-    'Switzerland VPN.exe'
-    'Switzerland VPN.ico'
-    'Switzerland VPN.png'
-    'Switzerland VPN Background.png'
-    'Uninstall Switzerland VPN.ps1'
+    'Swiss Army VPN.exe'
+    'Swiss Army VPN.ico'
+    'Swiss Army VPN.png'
+    'Uninstall Swiss Army VPN.ps1'
     'Emergency Unlock.ps1'
-    'Switch Switzerland VPN Server.ps1'
-    'Update Switzerland VPN.ps1'
+    'Switch Swiss Army VPN Server.ps1'
+    'Update Swiss Army VPN.ps1'
     'VPN Servers.txt'
 )
 $preservedInstallFiles = @(
@@ -63,28 +62,34 @@ $preservedInstallFiles = @(
     $ownershipFileName
 )
 $allowedPackageEntries = @(
-    'Install Switzerland VPN.exe'
-    'Install Switzerland VPN.cmd'
-    'Uninstall Switzerland VPN.cmd'
+    'Install Swiss Army VPN.exe'
+    'Install Swiss Army VPN.cmd'
+    'Uninstall Swiss Army VPN.cmd'
     'VPN Server.txt'
     'VPN Servers.txt'
     'Programs\Package Checksums.txt'
     'Programs\Executables\NordVPN Server Authentication Only.inf'
     'Programs\Executables\Emergency Unlock.exe'
-    'Programs\Executables\Switzerland VPN Background.png'
-    'Programs\Executables\Switzerland VPN.exe'
-    'Programs\Executables\Switzerland VPN.ico'
-    'Programs\Executables\Switzerland VPN.png'
+    'Programs\Executables\Swiss Army VPN.exe'
+    'Programs\Executables\Swiss Army VPN.ico'
+    'Programs\Executables\Swiss Army VPN.png'
     'Programs\PowershellBackup\Emergency Unlock.ps1'
-    'Programs\PowershellBackup\Install Switzerland VPN.ps1'
-    'Programs\PowershellBackup\Switch Switzerland VPN Server.ps1'
-    'Programs\PowershellBackup\Uninstall Switzerland VPN.ps1'
-    'Programs\PowershellBackup\Update Switzerland VPN.ps1'
-    'Programs\PowershellBackup\ManualBackup\Switzerland VPN OFF.ps1'
-    'Programs\PowershellBackup\ManualBackup\Switzerland VPN ON.ps1'
-    'Programs\PowershellBackup\ManualBackup\Switzerland VPN.ps1'
+    'Programs\PowershellBackup\Install Swiss Army VPN.ps1'
+    'Programs\PowershellBackup\Switch Swiss Army VPN Server.ps1'
+    'Programs\PowershellBackup\Uninstall Swiss Army VPN.ps1'
+    'Programs\PowershellBackup\Update Swiss Army VPN.ps1'
+    'Programs\PowershellBackup\ManualBackup\Swiss Army VPN OFF.ps1'
+    'Programs\PowershellBackup\ManualBackup\Swiss Army VPN ON.ps1'
+    'Programs\PowershellBackup\ManualBackup\Swiss Army VPN.ps1'
     'Programs\PowershellBackup\ManualBackup\VPN Profile.txt'
 )
+
+function Get-ExpectedFileVersion([string]$Version) {
+    # Windows file versions always have four parts. Product versions are four-part from 1.4.5.0
+    # onward, but installs recorded before that hold three, so pad only when a part is missing.
+    if ($Version -match '^\d+\.\d+\.\d+$') { return $Version + '.0' }
+    return $Version
+}
 
 function Test-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -200,7 +205,7 @@ function Assert-ProtectedApplicationDirectoryAcl {
     $administratorsSid = 'S-1-5-32-544'
     if (-not $security.AreAccessRulesProtected -or
         $security.GetOwner([Security.Principal.SecurityIdentifier]).Value -ne $administratorsSid) {
-        throw 'The Switzerland VPN protected-folder permissions changed. Reinstall before updating.'
+        throw 'The Swiss Army VPN protected-folder permissions changed. Reinstall before updating.'
     }
 
     $expectedRules = [Collections.Generic.Dictionary[string, uint64]]::new([StringComparer]::OrdinalIgnoreCase)
@@ -216,7 +221,7 @@ function Assert-ProtectedApplicationDirectoryAcl {
     }
     $actualRules = @($security.GetAccessRules($true, $false, [Security.Principal.SecurityIdentifier]))
     if ($actualRules.Count -ne $expectedRules.Count) {
-        throw 'The Switzerland VPN protected-folder permissions changed. Reinstall before updating.'
+        throw 'The Swiss Army VPN protected-folder permissions changed. Reinstall before updating.'
     }
     $inheritance = [Security.AccessControl.InheritanceFlags]::ContainerInherit -bor
         [Security.AccessControl.InheritanceFlags]::ObjectInherit
@@ -228,7 +233,7 @@ function Assert-ProtectedApplicationDirectoryAcl {
             $rule.AccessControlType -ne [Security.AccessControl.AccessControlType]::Allow -or
             $rule.InheritanceFlags -ne $inheritance -or
             $rule.PropagationFlags -ne [Security.AccessControl.PropagationFlags]::None) {
-            throw 'The Switzerland VPN protected-folder permissions changed. Reinstall before updating.'
+            throw 'The Swiss Army VPN protected-folder permissions changed. Reinstall before updating.'
         }
     }
 }
@@ -445,7 +450,7 @@ function Get-SafeInstallDirectory {
         }
     }
     catch {
-        throw 'The saved install location is not a Switzerland VPN folder on a local fixed drive.'
+        throw 'The saved install location is not a Swiss Army VPN folder on a local fixed drive.'
     }
 
     return $fullPath
@@ -453,14 +458,14 @@ function Get-SafeInstallDirectory {
 
 function Get-ValidatedInstallContext {
     if (-not (Test-Path -LiteralPath $statePath -PathType Leaf)) {
-        throw 'Switzerland VPN installation data is missing. Reinstall the app before updating.'
+        throw 'Swiss Army VPN installation data is missing. Reinstall the app before updating.'
     }
 
     try {
         $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
     }
     catch {
-        throw 'Switzerland VPN installation data is damaged. Reinstall the app before updating.'
+        throw 'Swiss Army VPN installation data is damaged. Reinstall the app before updating.'
     }
 
     foreach ($propertyName in @(
@@ -469,13 +474,13 @@ function Get-ValidatedInstallContext {
     )) {
         if ($state.PSObject.Properties.Name -notcontains $propertyName -or
             [string]::IsNullOrWhiteSpace([string]$state.$propertyName)) {
-            throw "Switzerland VPN installation data is incomplete ($propertyName)."
+            throw "Swiss Army VPN installation data is incomplete ($propertyName)."
         }
     }
     if (-not [string]::Equals([string]$state.ProductName, $productName, [StringComparison]::Ordinal) -or
         -not [guid]::TryParse([string]$state.InstallId, [ref]([guid]::Empty)) -or
-        [string]$state.Version -notmatch '^\d+\.\d+\.\d+$') {
-        throw 'Switzerland VPN installation ownership data is invalid.'
+        [string]$state.Version -notmatch '^\d+\.\d+\.\d+(\.\d+)?$') {
+        throw 'Swiss Army VPN installation ownership data is invalid.'
     }
 
     $installDirectory = Get-SafeInstallDirectory ([string]$state.InstallDirectory)
@@ -506,13 +511,13 @@ function Get-ValidatedInstallContext {
         throw 'The installation ownership marker does not match the saved installation. Nothing was changed.'
     }
 
-    $appPath = Join-Path $installDirectory 'Switzerland VPN.exe'
+    $appPath = Join-Path $installDirectory 'Swiss Army VPN.exe'
     if (-not (Test-Path -LiteralPath $appPath -PathType Leaf)) {
-        throw 'The installed Switzerland VPN program is missing.'
+        throw 'The installed Swiss Army VPN program is missing.'
     }
     $versionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($appPath)
     if (-not (Test-SupportedPublisher ([string]$versionInfo.CompanyName)) -or
-        $versionInfo.FileVersion -ne (([string]$state.Version) + '.0')) {
+        $versionInfo.FileVersion -ne (Get-ExpectedFileVersion ([string]$state.Version))) {
         throw 'The installed program version does not match its ownership data. Reinstall before updating.'
     }
 
@@ -656,8 +661,8 @@ function Get-ExactReleaseAssets {
     )
 
     $escapedVersion = [regex]::Escape($Version)
-    $zipPattern = "^Switzerland[ .]VPN[ .]Distribution[ .]$escapedVersion\.zip$"
-    $checksumPattern = "^Switzerland[ .]VPN[ .]Distribution[ .]$escapedVersion[ .]SHA256\.txt$"
+    $zipPattern = "^Swiss[ .]Army[ .]VPN[ .]Distribution[ .]$escapedVersion\.zip$"
+    $checksumPattern = "^Swiss[ .]Army[ .]VPN[ .]Distribution[ .]$escapedVersion[ .]SHA256\.txt$"
     $zipAssets = @($Release.assets | Where-Object { [string]$_.name -match $zipPattern })
     $checksumAssets = @($Release.assets | Where-Object { [string]$_.name -match $checksumPattern })
     if ($zipAssets.Count -ne 1 -or $checksumAssets.Count -ne 1) {
@@ -673,7 +678,7 @@ function Get-VerifiedReleaseMetadata {
         [Parameter(Mandatory)][string]$Version
     )
 
-    if ($Tag -cne ('v' + $Version) -or $Tag -cnotmatch '^v\d+\.\d+\.\d+$') {
+    if ($Tag -cne ('v' + $Version) -or $Tag -cnotmatch '^v\d+\.\d+\.\d+(\.\d+)?$') {
         throw 'The requested release tag and version do not match.'
     }
     $releaseJson = Invoke-GitHubCli -GitHubCli $GitHubCli -Arguments @(
@@ -707,7 +712,7 @@ function Get-ExpectedChecksum {
 
     $content = (Get-Content -LiteralPath $ChecksumPath -Raw).Trim()
     $escapedVersion = [regex]::Escape($Version)
-    $pattern = "^([A-Fa-f0-9]{64})\s+\*?Switzerland[ .]VPN[ .]Distribution[ .]$escapedVersion\.zip$"
+    $pattern = "^([A-Fa-f0-9]{64})\s+\*?Swiss[ .]Army[ .]VPN[ .]Distribution[ .]$escapedVersion\.zip$"
     if ($content -notmatch $pattern) {
         throw 'The release checksum file has an invalid format or filename.'
     }
@@ -836,9 +841,9 @@ function Assert-PackageManifest {
         throw 'The package checksum manifest does not exactly cover the Programs payload.'
     }
 
-    $newExe = Join-Path $PackageRoot 'Programs\Executables\Switzerland VPN.exe'
+    $newExe = Join-Path $PackageRoot 'Programs\Executables\Swiss Army VPN.exe'
     $versionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($newExe)
-    if ($versionInfo.CompanyName -ne $publisher -or $versionInfo.FileVersion -ne ($Version + '.0')) {
+    if ($versionInfo.CompanyName -ne $publisher -or $versionInfo.FileVersion -ne (Get-ExpectedFileVersion $Version)) {
         throw 'The update executable has the wrong publisher or version.'
     }
 }
@@ -921,7 +926,7 @@ function Enter-NamedMutex {
     try {
         try { $owned = $mutex.WaitOne(1000) }
         catch [Threading.AbandonedMutexException] { $owned = $true }
-        if (-not $owned) { throw 'Another Switzerland VPN update is already running.' }
+        if (-not $owned) { throw 'Another Swiss Army VPN update is already running.' }
         return $mutex
     }
     catch {
@@ -1155,8 +1160,8 @@ function Restore-IncompleteUpdate {
             throw 'The update recovery journal is incomplete. Ask Justichuu before updating again.'
         }
     }
-    if ([string]$journal.FromVersion -notmatch '^\d+\.\d+\.\d+$' -or
-        [string]$journal.ToVersion -notmatch '^\d+\.\d+\.\d+$' -or
+    if ([string]$journal.FromVersion -notmatch '^\d+\.\d+\.\d+(\.\d+)?$' -or
+        [string]$journal.ToVersion -notmatch '^\d+\.\d+\.\d+(\.\d+)?$' -or
         @('Prepared', 'BackupReady', 'FilesUpdated', 'StateUpdated', 'RegistryUpdated', 'Committed', 'RolledBack') `
             -cnotcontains [string]$journal.Phase) {
         throw 'The update recovery journal contains an invalid phase or version.'
@@ -1177,9 +1182,9 @@ function Restore-IncompleteUpdate {
     $parentDirectory = Split-Path -Parent $installDirectory
     Assert-InstallParentIsProtected -Path $parentDirectory
     Assert-ProtectedApplicationDirectoryAcl -Path $installDirectory
-    $transactionRoot = Join-Path $parentDirectory ('.Switzerland VPN.update-' + $id)
-    $backupDirectory = Join-Path $parentDirectory ('.Switzerland VPN.backup-' + $id)
-    $restoreDirectory = Join-Path $parentDirectory ('.Switzerland VPN.restore-' + $id)
+    $transactionRoot = Join-Path $parentDirectory ('.Swiss Army VPN.update-' + $id)
+    $backupDirectory = Join-Path $parentDirectory ('.Swiss Army VPN.backup-' + $id)
+    $restoreDirectory = Join-Path $parentDirectory ('.Swiss Army VPN.restore-' + $id)
     $stateTemporary = Join-Path $stateDir ('install-state.update-' + $id + '.json')
     $stateBackup = Join-Path $stateDir ('install-state.backup-' + $id + '.json')
     $recoveryPaths = @($restoreDirectory, $transactionRoot, $stateTemporary, $stateBackup, $backupDirectory)
@@ -1283,7 +1288,7 @@ function Invoke-SecureElevatedApply {
         if (-not (Test-Administrator)) { throw 'Administrator approval is required to apply the update.' }
         Assert-ProtectedApplicationDirectoryAcl -Path $stateDir
         if ($ExpectedSha256 -notmatch '^[A-Fa-f0-9]{64}$' -or
-            $ExpectedVersion -notmatch '^\d+\.\d+\.\d+$' -or
+            $ExpectedVersion -notmatch '^\d+\.\d+\.\d+(\.\d+)?$' -or
             $ExpectedTag -cne ('v' + $ExpectedVersion)) {
             throw 'The elevated updater received invalid release verification data.'
         }
@@ -1299,7 +1304,7 @@ function Invoke-SecureElevatedApply {
         Assert-InstallParentIsProtected -Path (Split-Path -Parent $context.InstallDirectory)
         Assert-ProtectedApplicationDirectoryAcl -Path $context.InstallDirectory
         Assert-CurrentInstallLayout -InstallDirectory $context.InstallDirectory
-        $trustedScript = Join-Path $context.InstallDirectory 'Update Switzerland VPN.ps1'
+        $trustedScript = Join-Path $context.InstallDirectory 'Update Swiss Army VPN.ps1'
         if (-not [string]::Equals(
             (Get-ExactFullPath $PSCommandPath),
             (Get-ExactFullPath $trustedScript),
@@ -1324,7 +1329,7 @@ function Invoke-SecureElevatedApply {
         $packageFullPath = Get-ExactFullPath $PackageZip
         $packageParent = Split-Path -Parent $packageFullPath
         $cancelPath = Join-Path $packageParent 'cancel.txt'
-        $requiredSuffix = '\Justichuu\Switzerland VPN\Updates\' + $validatedId
+        $requiredSuffix = '\Justichuu\Swiss Army VPN\Updates\' + $validatedId
         if (-not [IO.Path]::IsPathRooted($packageFullPath) -or
             $packageFullPath.StartsWith('\\') -or
             -not $packageParent.EndsWith($requiredSuffix, [StringComparison]::OrdinalIgnoreCase) -or
@@ -1339,14 +1344,14 @@ function Invoke-SecureElevatedApply {
         $trustedHash = $ExpectedSha256.ToUpperInvariant()
         $escapedVersion = [regex]::Escape($ExpectedVersion)
         if ([IO.Path]::GetFileName($packageFullPath) -notmatch
-            "^Switzerland[ .]VPN[ .]Distribution[ .]$escapedVersion\.zip$") {
+            "^Swiss[ .]Army[ .]VPN[ .]Distribution[ .]$escapedVersion\.zip$") {
             throw 'The downloaded ZIP name does not match the requested release.'
         }
 
         $parentDirectory = Split-Path -Parent $context.InstallDirectory
-        $transactionRoot = Join-Path $parentDirectory ('.Switzerland VPN.update-' + $validatedId)
-        $backupDirectory = Join-Path $parentDirectory ('.Switzerland VPN.backup-' + $validatedId)
-        $restoreDirectory = Join-Path $parentDirectory ('.Switzerland VPN.restore-' + $validatedId)
+        $transactionRoot = Join-Path $parentDirectory ('.Swiss Army VPN.update-' + $validatedId)
+        $backupDirectory = Join-Path $parentDirectory ('.Swiss Army VPN.backup-' + $validatedId)
+        $restoreDirectory = Join-Path $parentDirectory ('.Swiss Army VPN.restore-' + $validatedId)
         foreach ($path in @($transactionRoot, $backupDirectory, $restoreDirectory)) {
             if (Test-Path -LiteralPath $path) { throw 'A protected update path unexpectedly already exists.' }
         }
@@ -1392,15 +1397,14 @@ function Invoke-SecureElevatedApply {
         $newInstall = Join-Path $transactionRoot 'new-install'
         New-Item -ItemType Directory -Path $newInstall | Out-Null
         foreach ($name in @(
-            'Emergency Unlock.exe', 'Switzerland VPN.exe', 'Switzerland VPN.ico', 'Switzerland VPN.png',
-            'Switzerland VPN Background.png'
+            'Emergency Unlock.exe', 'Swiss Army VPN.exe', 'Swiss Army VPN.ico', 'Swiss Army VPN.png'
         )) {
             Copy-Item -LiteralPath (Join-Path $packageRoot ('Programs\Executables\' + $name)) `
                 -Destination (Join-Path $newInstall $name)
         }
         foreach ($name in @(
-            'Uninstall Switzerland VPN.ps1', 'Emergency Unlock.ps1',
-            'Switch Switzerland VPN Server.ps1', 'Update Switzerland VPN.ps1'
+            'Uninstall Swiss Army VPN.ps1', 'Emergency Unlock.ps1',
+            'Switch Swiss Army VPN Server.ps1', 'Update Swiss Army VPN.ps1'
         )) {
             Copy-Item -LiteralPath (Join-Path $packageRoot ('Programs\PowershellBackup\' + $name)) `
                 -Destination (Join-Path $newInstall $name)
@@ -1459,8 +1463,8 @@ function Invoke-SecureElevatedApply {
         Set-JournalPhase -Journal $journal -Phase 'BackupReady'
 
         $replacementOrder = @(
-            @($managedInstallFiles | Where-Object { $_ -ne 'Switzerland VPN.exe' }) +
-            @('Switzerland VPN.exe', $ownershipFileName)
+            @($managedInstallFiles | Where-Object { $_ -ne 'Swiss Army VPN.exe' }) +
+            @('Swiss Army VPN.exe', $ownershipFileName)
         )
         foreach ($name in $replacementOrder) {
             Set-FileFromStagedCopy -StagedPath (Join-Path $newInstall $name) `
@@ -1487,7 +1491,7 @@ function Invoke-SecureElevatedApply {
         $committed = $true
         Write-JsonFile -Path $resultPath -Value ([ordered]@{
             Status = 'Success'
-            Message = "Switzerland VPN was updated to $ExpectedVersion."
+            Message = "Swiss Army VPN was updated to $ExpectedVersion."
             Version = $ExpectedVersion
             InstallDirectory = $context.InstallDirectory
         })
@@ -1552,7 +1556,7 @@ function Invoke-RecoveryOnly {
     try {
         if (-not (Test-Path -LiteralPath $journalPath -PathType Leaf) -and
             -not (Test-Path -LiteralPath $journalPreviousPath -PathType Leaf)) {
-            throw 'There is no interrupted Switzerland VPN update to recover.'
+            throw 'There is no interrupted Swiss Army VPN update to recover.'
         }
         Assert-ProtectedApplicationDirectoryAcl -Path $stateDir
         $journal = Read-UpdateJournal
@@ -1560,13 +1564,13 @@ function Invoke-RecoveryOnly {
             throw 'The update recovery journal has no install location.'
         }
         $installDirectory = Get-SafeInstallDirectory ([string]$journal.InstallDirectory)
-        $trustedScript = Join-Path $installDirectory 'Update Switzerland VPN.ps1'
+        $trustedScript = Join-Path $installDirectory 'Update Swiss Army VPN.ps1'
         if (-not [string]::Equals(
             (Get-ExactFullPath $PSCommandPath),
             (Get-ExactFullPath $trustedScript),
             [StringComparison]::OrdinalIgnoreCase
         ) -or -not (Test-Path -LiteralPath $trustedScript -PathType Leaf)) {
-            throw 'Update recovery must run from the installed Switzerland VPN helper.'
+            throw 'Update recovery must run from the installed Swiss Army VPN helper.'
         }
         $scriptItem = Get-Item -LiteralPath $trustedScript -Force
         if (($scriptItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
@@ -1611,7 +1615,7 @@ function Invoke-RecoveryOnly {
         }
 
         $updaterMutex = Enter-NamedMutex -Name $updaterMutexName
-        $appPath = Join-Path $installDirectory 'Switzerland VPN.exe'
+        $appPath = Join-Path $installDirectory 'Swiss Army VPN.exe'
         if ($ParentProcessId -gt 0) {
             if ($ParentProcessStartTimeUtcTicks -le 0) {
                 throw 'The update recovery request has invalid widget process information.'
@@ -1629,7 +1633,7 @@ function Invoke-RecoveryOnly {
         return 0
     }
     catch {
-        Show-UpdateMessage -Message $_.Exception.Message -Title 'Switzerland VPN Update Recovery' -Icon Error
+        Show-UpdateMessage -Message $_.Exception.Message -Title 'Swiss Army VPN Update Recovery' -Icon Error
         return 2
     }
     finally {
@@ -1655,7 +1659,7 @@ try {
     if (Test-Administrator) {
         throw 'Run Check for Updates normally, not as Administrator. Only the file-replacement step asks for approval.'
     }
-    if ($ExpectedTag -cnotmatch '^v(\d+\.\d+\.\d+)$') {
+    if ($ExpectedTag -cnotmatch '^v(\d+\.\d+\.\d+(?:\.\d+)?)$') {
         throw 'The widget requested an invalid release tag.'
     }
     $newVersionText = $matches[1]
@@ -1665,13 +1669,13 @@ try {
     Assert-InstallParentIsProtected -Path (Split-Path -Parent $context.InstallDirectory)
     Assert-ProtectedApplicationDirectoryAcl -Path $context.InstallDirectory
     Assert-CurrentInstallLayout -InstallDirectory $context.InstallDirectory
-    $trustedScript = Join-Path $context.InstallDirectory 'Update Switzerland VPN.ps1'
+    $trustedScript = Join-Path $context.InstallDirectory 'Update Swiss Army VPN.ps1'
     if (-not [string]::Equals(
         (Get-ExactFullPath $PSCommandPath),
         (Get-ExactFullPath $trustedScript),
         [StringComparison]::OrdinalIgnoreCase
     )) {
-        throw 'Private updates are available only from the installed Switzerland VPN app.'
+        throw 'Private updates are available only from the installed Swiss Army VPN app.'
     }
     $parent = Get-ExactAppProcess -ProcessId $ParentProcessId -StartTimeUtcTicks $ParentProcessStartTimeUtcTicks -AppPath $context.AppPath
     if ($ParentProcessId -le 0 -or $ParentProcessStartTimeUtcTicks -le 0 -or $null -eq $parent) {
@@ -1687,7 +1691,7 @@ try {
     $assets = $metadata.Assets
     Invoke-GitHubCli -GitHubCli $gh -Arguments @('release', 'verify', $ExpectedTag, '--repo', $repository)
 
-    $workRoot = Join-Path $env:LOCALAPPDATA 'Justichuu\Switzerland VPN\Updates'
+    $workRoot = Join-Path $env:LOCALAPPDATA 'Justichuu\Swiss Army VPN\Updates'
     $workDirectory = Join-Path $workRoot $validatedId
     $localFailurePath = Join-Path $workDirectory 'failure.txt'
     if (Test-Path -LiteralPath $workDirectory) {
@@ -1788,12 +1792,12 @@ try {
             if (Test-Path -LiteralPath $context.AppPath -PathType Leaf) {
                 Start-Process -FilePath $context.AppPath -WorkingDirectory $context.InstallDirectory | Out-Null
             }
-            Show-UpdateMessage -Message ([string]$result.Message) -Title 'Switzerland VPN Update Stopped' -Icon Error
+            Show-UpdateMessage -Message ([string]$result.Message) -Title 'Swiss Army VPN Update Stopped' -Icon Error
         }
         exit 2
     }
 
-    $installedApp = Join-Path ([string]$result.InstallDirectory) 'Switzerland VPN.exe'
+    $installedApp = Join-Path ([string]$result.InstallDirectory) 'Swiss Army VPN.exe'
     Start-Process -FilePath $installedApp -WorkingDirectory ([string]$result.InstallDirectory) | Out-Null
 }
 catch {
@@ -1809,13 +1813,13 @@ catch {
         $keepWorkDirectory = $true
     }
     if ($ParentProcessId -le 0) {
-        Show-UpdateMessage -Message $message -Title 'Switzerland VPN Update Stopped' -Icon Error
+        Show-UpdateMessage -Message $message -Title 'Swiss Army VPN Update Stopped' -Icon Error
     }
     exit 2
 }
 finally {
     if (-not $keepWorkDirectory -and $workDirectory -and (Test-Path -LiteralPath $workDirectory -PathType Container)) {
-        $safeRoot = (Get-ExactFullPath (Join-Path $env:LOCALAPPDATA 'Justichuu\Switzerland VPN\Updates')) + '\'
+        $safeRoot = (Get-ExactFullPath (Join-Path $env:LOCALAPPDATA 'Justichuu\Swiss Army VPN\Updates')) + '\'
         $resolvedWork = Get-ExactFullPath $workDirectory
         if ($resolvedWork.StartsWith($safeRoot, [StringComparison]::OrdinalIgnoreCase)) {
             Start-Sleep -Milliseconds 750

@@ -15,7 +15,7 @@ This document outlines the feature roadmap for The Swiss Army VPN, a privacy-foc
 ## 🚧 Phase 1: Core Enhancements (v1.2.0)
 
 ### Optional United States Installation
-- **Description:** Offer country selection during installation with Switzerland as default
+- **Description:** Offer country selection during installation with Swiss Army VPN as default
 - **Guardrails:**
   - Single managed VPN profile per installation
   - Explicit country labeling in UI, diagnostics, and server validation
@@ -42,7 +42,7 @@ This document outlines the feature roadmap for The Swiss Army VPN, a privacy-foc
 | # | Feature | Description | Status |
 |---|---------|-------------|--------|
 | 19 | Release verifier integration | Build-time validation of distribution and source artifacts with SHA256 checks and exact package layout | ✅ Committed |
-| 20 | Distribution installation guidance | Clear user-facing instructions for extracting and running `Install Switzerland VPN.exe` | ✅ Updated |
+| 20 | Distribution installation guidance | Clear user-facing instructions for extracting and running `Install Swiss Army VPN.exe` | ✅ Updated |
 
 ---
 

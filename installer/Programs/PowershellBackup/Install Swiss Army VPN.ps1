@@ -8,19 +8,19 @@ $ErrorActionPreference = 'Stop'
 
 Add-Type -AssemblyName System.Windows.Forms
 
-$vpnName = 'Switzerland VPN'
-$ruleGroup = 'Switzerland VPN Kill Switch'
+$vpnName = 'Swiss Army VPN'
+$ruleGroup = 'Swiss Army VPN Kill Switch'
 $publisher = 'Justichuu'
 # The project handle changed because I got bored; accept the old publisher only while upgrading.
 $legacyPublisher = 'Jaye'
-$installVersion = '1.4.3'
+$installVersion = '1.5.0.0'
 $installParent = $null
 $installDir = $null
 $validatedInstallTarget = $null
-$stateDir = Join-Path $env:ProgramData 'Switzerland VPN'
+$stateDir = Join-Path $env:ProgramData 'Swiss Army VPN'
 $statePath = Join-Path $stateDir 'install-state.json'
 $ownershipFileName = 'install-ownership.json'
-$uninstallKey = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Switzerland VPN Widget'
+$uninstallKey = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Swiss Army VPN Widget'
 $programsDir = Split-Path -Parent $PSScriptRoot
 $packageRoot = Split-Path -Parent $programsDir
 $payloadDir = Join-Path $programsDir 'Executables'
@@ -43,6 +43,13 @@ $registryCreationStarted = $false
 $matchingProfiles = @()
 $phonebookSnapshot = @()
 $installId = [guid]::NewGuid().ToString('D')
+
+function Get-ExpectedFileVersion([string]$Version) {
+    # Windows file versions always have four parts. Product versions are four-part from 1.5.0.0
+    # onward, but installs recorded before that hold three, so pad only when a part is missing.
+    if ($Version -match '^\d+\.\d+\.\d+$') { return $Version + '.0' }
+    return $Version
+}
 
 function Test-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -260,7 +267,7 @@ function Get-ValidatedInstallParent {
     )
 
     if ([string]::IsNullOrWhiteSpace($Path)) {
-        throw 'Choose the parent folder where Switzerland VPN should be installed.'
+        throw 'Choose the parent folder where Swiss Army VPN should be installed.'
     }
     if ($Path.StartsWith('\\', [StringComparison]::Ordinal) -or
         $Path.StartsWith('//', [StringComparison]::Ordinal) -or
@@ -286,10 +293,10 @@ function Get-ValidatedInstallParent {
     }
     if ([string]::Equals(
         [IO.Path]::GetFileName($fullPath),
-        'Switzerland VPN',
+        'Swiss Army VPN',
         [StringComparison]::OrdinalIgnoreCase
     )) {
-        throw 'Choose the parent folder, not a folder already named Switzerland VPN.'
+        throw 'Choose the parent folder, not a folder already named Swiss Army VPN.'
     }
     if (-not (Test-Path -LiteralPath $fullPath -PathType Container)) {
         throw 'The selected parent folder does not exist.'
@@ -311,7 +318,7 @@ function Get-ValidatedInstallParent {
 function Select-InstallParentDirectory {
     $dialog = [Windows.Forms.FolderBrowserDialog]::new()
     try {
-        $dialog.Description = "Select the parent folder.`r`nSwitzerland VPN will be installed inside it."
+        $dialog.Description = "Select the parent folder.`r`nSwiss Army VPN will be installed inside it."
         $dialog.SelectedPath = $env:ProgramFiles
         $dialog.ShowNewFolderButton = $true
         if ($dialog.ShowDialog() -ne [Windows.Forms.DialogResult]::OK) {
@@ -325,8 +332,8 @@ function Select-InstallParentDirectory {
 }
 
 function Assert-ExactInstallPaths {
-    $expectedInstall = Get-ExactFullPath (Join-Path $installParent 'Switzerland VPN')
-    $expectedState = Get-ExactFullPath (Join-Path $env:ProgramData 'Switzerland VPN')
+    $expectedInstall = Get-ExactFullPath (Join-Path $installParent 'Swiss Army VPN')
+    $expectedState = Get-ExactFullPath (Join-Path $env:ProgramData 'Swiss Army VPN')
     if ((Get-ExactFullPath $installDir) -ne $expectedInstall) {
         throw 'The installation folder failed its safety check.'
     }
@@ -343,10 +350,9 @@ function Assert-ExactInstallPaths {
 function Assert-PackageFiles {
     $requiredExecutables = @(
         'Emergency Unlock.exe'
-        'Switzerland VPN.exe'
-        'Switzerland VPN.ico'
-        'Switzerland VPN.png'
-        'Switzerland VPN Background.png'
+        'Swiss Army VPN.exe'
+        'Swiss Army VPN.ico'
+        'Swiss Army VPN.png'
         'NordVPN Server Authentication Only.inf'
     )
 
@@ -358,7 +364,7 @@ function Assert-PackageFiles {
     if ($missingExecutables.Count -gt 0) {
         $sourceRoot = Split-Path -Parent $packageRoot
         $sourceBuildScript = Join-Path $sourceRoot 'scripts\Build-Release.ps1'
-        $sourceApplication = Join-Path $sourceRoot 'src\SwitzerlandVPN.cs'
+        $sourceApplication = Join-Path $sourceRoot 'src\SwissArmyVPN.cs'
         if ((Test-Path -LiteralPath $sourceBuildScript -PathType Leaf) -and
             (Test-Path -LiteralPath $sourceApplication -PathType Leaf)) {
             throw @"
@@ -367,7 +373,7 @@ This is GitHub's source-code ZIP, not the installable application package.
 Open:
 https://github.com/Justichuu/The-Swiss-Army-VPN/releases/latest
 
-Download and extract "Switzerland VPN Distribution ${installVersion}.zip", then run "Install Switzerland VPN.exe". Do not use GitHub's green Code > Download ZIP option.
+Download and extract "Swiss Army VPN Distribution ${installVersion}.zip", then run "Install Swiss Army VPN.exe". Do not use GitHub's green Code > Download ZIP option.
 "@
         }
     }
@@ -380,9 +386,9 @@ Download and extract "Switzerland VPN Distribution ${installVersion}.zip", then 
     }
 
     foreach ($name in @(
-        'Install Switzerland VPN.ps1'
-        'Update Switzerland VPN.ps1'
-        'Uninstall Switzerland VPN.ps1'
+        'Install Swiss Army VPN.ps1'
+        'Update Swiss Army VPN.ps1'
+        'Uninstall Swiss Army VPN.ps1'
         'Emergency Unlock.ps1'
     )) {
         $path = Join-Path $powershellBackupDir $name
@@ -391,7 +397,7 @@ Download and extract "Switzerland VPN Distribution ${installVersion}.zip", then 
         }
     }
 
-    foreach ($name in @('Switzerland VPN.ps1', 'Switzerland VPN ON.ps1', 'Switzerland VPN OFF.ps1', 'VPN Profile.txt')) {
+    foreach ($name in @('Swiss Army VPN.ps1', 'Swiss Army VPN ON.ps1', 'Swiss Army VPN OFF.ps1', 'VPN Profile.txt')) {
         $path = Join-Path $manualBackupDir $name
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
             throw "The package is incomplete. Missing: Programs\PowershellBackup\ManualBackup\$name"
@@ -662,7 +668,7 @@ function Set-ProfileIpv6Disabled {
 }
 
 function Install-NordVpnCertificate {
-    $tempDir = Join-Path $env:TEMP ("SwitzerlandVPN-Install-" + [guid]::NewGuid().ToString('N'))
+    $tempDir = Join-Path $env:TEMP ("SwissArmyVPN-Install-" + [guid]::NewGuid().ToString('N'))
     $certPath = Join-Path $tempDir 'root.der'
     New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
 
@@ -717,7 +723,7 @@ function Install-NordVpnCertificate {
         }
     }
     finally {
-        $expectedPrefix = (Get-ExactFullPath $env:TEMP) + '\SwitzerlandVPN-Install-'
+        $expectedPrefix = (Get-ExactFullPath $env:TEMP) + '\SwissArmyVPN-Install-'
         $resolvedTemp = Get-ExactFullPath $tempDir
         if ($resolvedTemp.StartsWith($expectedPrefix, [StringComparison]::OrdinalIgnoreCase) -and
             (Test-Path -LiteralPath $tempDir)) {
@@ -799,20 +805,20 @@ function Remove-VerifiedPerUserShortcuts {
         [string]$PowerShellExecutable
     )
 
-    $desktopShortcut = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Switzerland VPN.lnk'
-    $userStartFolder = Join-Path ([Environment]::GetFolderPath('Programs')) 'Switzerland VPN'
+    $desktopShortcut = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Swiss Army VPN.lnk'
+    $userStartFolder = Join-Path ([Environment]::GetFolderPath('Programs')) 'Swiss Army VPN'
     $shortcutDefinitions = @(
         [pscustomobject]@{ Path = $desktopShortcut; Target = $InstalledExecutable; Arguments = '' }
-        [pscustomobject]@{ Path = (Join-Path $userStartFolder 'Switzerland VPN.lnk'); Target = $InstalledExecutable; Arguments = '' }
+        [pscustomobject]@{ Path = (Join-Path $userStartFolder 'Swiss Army VPN.lnk'); Target = $InstalledExecutable; Arguments = '' }
         [pscustomobject]@{
             Path = Join-Path $userStartFolder 'Emergency Unlock.lnk'
             Target = $PowerShellExecutable
             Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $installDir 'Emergency Unlock.ps1')`""
         }
         [pscustomobject]@{
-            Path = Join-Path $userStartFolder 'Uninstall Switzerland VPN.lnk'
+            Path = Join-Path $userStartFolder 'Uninstall Swiss Army VPN.lnk'
             Target = $PowerShellExecutable
-            Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $installDir 'Uninstall Switzerland VPN.ps1')`""
+            Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $installDir 'Uninstall Swiss Army VPN.ps1')`""
         }
     )
 
@@ -838,7 +844,7 @@ function Start-AsInteractiveShellUser {
     )
 
     if (-not (Test-Path -LiteralPath $FilePath -PathType Leaf)) {
-        throw 'The installed Switzerland VPN program is missing.'
+        throw 'The installed Swiss Army VPN program is missing.'
     }
 
     $shell = $null
@@ -908,23 +914,20 @@ function Get-ExpectedManagedInstallFileNames {
     )
 
     $requiredFiles = @(
-        'Switzerland VPN.exe'
-        'Switzerland VPN.ico'
-        'Switzerland VPN.png'
-        'Switzerland VPN Background.png'
-        'Uninstall Switzerland VPN.ps1'
+        'Swiss Army VPN.exe'
+        'Swiss Army VPN.ico'
+        'Swiss Army VPN.png'
+        'Uninstall Swiss Army VPN.ps1'
         'Emergency Unlock.ps1'
         'VPN Server.txt'
         $ownershipFileName
     )
-    if ([version]$ExpectedVersion -ge [version]'1.2.0') {
-        $requiredFiles += 'Switch Switzerland VPN Server.ps1', 'VPN Servers.txt'
-    }
-    if ([version]$ExpectedVersion -ge [version]'1.3.1') {
-        $requiredFiles += 'Emergency Unlock.exe'
-    }
+    # No version gates. Swiss Army VPN starts at 1.5.0.0, so every install this function can ever
+    # be asked about has the same layout. The old 1.2.0 and 1.3.1 gates belonged to the Switzerland
+    # VPN product, whose installs carry a different ProductName and can never reach this code.
+    $requiredFiles += 'Switch Swiss Army VPN Server.ps1', 'VPN Servers.txt', 'Emergency Unlock.exe'
     if ($RequireUpdateHelper) {
-        $requiredFiles += 'Update Switzerland VPN.ps1'
+        $requiredFiles += 'Update Swiss Army VPN.ps1'
     }
 
     return $requiredFiles
@@ -983,16 +986,15 @@ function New-ManagedInstallPayloadStage {
     )
 
     foreach ($name in @(
-        'Emergency Unlock.exe', 'Switzerland VPN.exe', 'Switzerland VPN.ico', 'Switzerland VPN.png',
-        'Switzerland VPN Background.png'
+        'Emergency Unlock.exe', 'Swiss Army VPN.exe', 'Swiss Army VPN.ico', 'Swiss Army VPN.png'
     )) {
         Copy-AndVerifyUpgradeFile `
             -Source (Join-Path $payloadDir $name) `
             -Destination (Join-Path $DestinationDirectory $name)
     }
     foreach ($name in @(
-        'Update Switzerland VPN.ps1', 'Uninstall Switzerland VPN.ps1',
-        'Emergency Unlock.ps1', 'Switch Switzerland VPN Server.ps1'
+        'Update Swiss Army VPN.ps1', 'Uninstall Swiss Army VPN.ps1',
+        'Emergency Unlock.ps1', 'Switch Swiss Army VPN Server.ps1'
     )) {
         Copy-AndVerifyUpgradeFile `
             -Source (Join-Path $powershellBackupDir $name) `
@@ -1110,10 +1112,10 @@ function Get-ValidatedManagedUpgradeContext {
         -RequireUpdateHelper:$RequireUpdateHelper `
         -FailureMessage 'The existing application folder contains missing or unexpected files. Nothing was changed.'
 
-    $appPath = Join-Path $installDir 'Switzerland VPN.exe'
+    $appPath = Join-Path $installDir 'Swiss Army VPN.exe'
     $versionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($appPath)
     if (-not (Test-SupportedPublisher ([string]$versionInfo.CompanyName)) -or
-        $versionInfo.FileVersion -ne ($ExpectedVersion + '.0')) {
+        $versionInfo.FileVersion -ne (Get-ExpectedFileVersion $ExpectedVersion)) {
         throw 'The installed program does not match its owned version record. Nothing was changed.'
     }
 
@@ -1189,10 +1191,10 @@ function Get-ValidatedManagedUpgradeContext {
 function Assert-WidgetIsClosedForUpgrade {
     param([Parameter(Mandatory)][string]$AppPath)
 
-    foreach ($process in @(Get-Process -Name 'Switzerland VPN' -ErrorAction SilentlyContinue)) {
+    foreach ($process in @(Get-Process -Name 'Swiss Army VPN' -ErrorAction SilentlyContinue)) {
         try {
             if ([string]::Equals((Get-ExactFullPath $process.Path), $AppPath, [StringComparison]::OrdinalIgnoreCase)) {
-                throw 'Close Switzerland VPN from its tray icon, then run the installer again. The VPN and kill switch were not changed.'
+                throw 'Close Swiss Army VPN from its tray icon, then run the installer again. The VPN and kill switch were not changed.'
             }
         }
         finally {
@@ -1217,7 +1219,7 @@ function Copy-AndVerifyUpgradeFile {
 function Invoke-ManagedInstallUpgrade {
     param([Parameter(Mandatory)][object]$Context)
 
-    $transactionRoot = Join-Path $installParent ('.Switzerland VPN.install-upgrade-' + [guid]::NewGuid().ToString('N'))
+    $transactionRoot = Join-Path $installParent ('.Swiss Army VPN.install-upgrade-' + [guid]::NewGuid().ToString('N'))
     $newInstall = Join-Path $transactionRoot 'new-install'
     $backupInstall = Join-Path $transactionRoot 'old-install'
     $failedInstall = Join-Path $transactionRoot 'failed-install'
@@ -1233,10 +1235,10 @@ function Invoke-ManagedInstallUpgrade {
     $serverShortcutCreated = $false
     $emergencyShortcutChanged = $false
     $serverShortcutPath = Join-Path `
-        (Join-Path ([Environment]::GetFolderPath('CommonPrograms')) 'Switzerland VPN') `
+        (Join-Path ([Environment]::GetFolderPath('CommonPrograms')) 'Swiss Army VPN') `
         'Choose Swiss VPN Server.lnk'
     $serverShortcutPowerShell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
-    $serverShortcutArguments = "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $installDir 'Switch Switzerland VPN Server.ps1')`""
+    $serverShortcutArguments = "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $installDir 'Switch Swiss Army VPN Server.ps1')`""
     $serverShortcutPreexisting = Test-Path -LiteralPath $serverShortcutPath -PathType Leaf
     if ($serverShortcutPreexisting -and -not (Test-PackageShortcut `
         -Path $serverShortcutPath `
@@ -1245,7 +1247,7 @@ function Invoke-ManagedInstallUpgrade {
         throw "An unmanaged shortcut already exists: $serverShortcutPath"
     }
     $emergencyShortcutPath = Join-Path `
-        (Join-Path ([Environment]::GetFolderPath('CommonPrograms')) 'Switzerland VPN') `
+        (Join-Path ([Environment]::GetFolderPath('CommonPrograms')) 'Swiss Army VPN') `
         'Emergency Unlock.lnk'
     $emergencyShortcutBackup = Join-Path $transactionRoot 'Emergency Unlock.lnk'
     $legacyEmergencyArguments = "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $installDir 'Emergency Unlock.ps1')`""
@@ -1279,8 +1281,8 @@ function Invoke-ManagedInstallUpgrade {
             -InstallDirectory $installDir
         Set-ProtectedApplicationDirectoryAcl -Path $newInstall
 
-        $newVersionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $newInstall 'Switzerland VPN.exe'))
-        if ($newVersionInfo.CompanyName -ne $publisher -or $newVersionInfo.FileVersion -ne ($installVersion + '.0')) {
+        $newVersionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $newInstall 'Swiss Army VPN.exe'))
+        if ($newVersionInfo.CompanyName -ne $publisher -or $newVersionInfo.FileVersion -ne (Get-ExpectedFileVersion $installVersion)) {
             throw 'The staged upgrade failed its publisher or version check.'
         }
         Assert-ManagedInstallFileLayout `
@@ -1327,7 +1329,7 @@ function Invoke-ManagedInstallUpgrade {
             throw 'The upgraded installation did not retain the new publisher identity.'
         }
 
-        $upgradedExecutable = Join-Path $installDir 'Switzerland VPN.exe'
+        $upgradedExecutable = Join-Path $installDir 'Swiss Army VPN.exe'
         $upgradedEmergencyUnlock = Join-Path $installDir 'Emergency Unlock.exe'
         New-Shortcut -Path $serverShortcutPath -Target $serverShortcutPowerShell `
             -Arguments $serverShortcutArguments `
@@ -1416,7 +1418,7 @@ try {
             if ([string]::IsNullOrWhiteSpace($InstallParentDirectory)) {
                 [Windows.Forms.MessageBox]::Show(
                     'Installation was canceled. No changes were made.',
-                    'Switzerland VPN Installation Canceled',
+                    'Swiss Army VPN Installation Canceled',
                     [Windows.Forms.MessageBoxButtons]::OK,
                     [Windows.Forms.MessageBoxIcon]::Information
                 ) | Out-Null
@@ -1426,7 +1428,7 @@ try {
     }
 
     $installParent = Get-ValidatedInstallParent -Path $InstallParentDirectory
-    $installDir = Get-ExactFullPath (Join-Path $installParent 'Switzerland VPN')
+    $installDir = Get-ExactFullPath (Join-Path $installParent 'Swiss Army VPN')
     Assert-ExactInstallPaths
     Assert-PackageFiles
     Assert-PackageChecksums
@@ -1447,7 +1449,7 @@ catch {
     else {
         [Windows.Forms.MessageBox]::Show(
             "Installation could not start. No changes were made.`r`n`r`n$failure",
-            'Switzerland VPN Installation Stopped',
+            'Swiss Army VPN Installation Stopped',
             [Windows.Forms.MessageBoxButtons]::OK,
             [Windows.Forms.MessageBoxIcon]::Error
         ) | Out-Null
@@ -1457,7 +1459,7 @@ catch {
 
 if ($ValidatePackageOnly) {
     $upgradeValidationRoot = Join-Path ([IO.Path]::GetTempPath()) `
-        ('Switzerland-VPN-upgrade-layout-' + [guid]::NewGuid().ToString('N'))
+        ('Swiss-Army-VPN-upgrade-layout-' + [guid]::NewGuid().ToString('N'))
     try {
         New-Item -ItemType Directory -Path $upgradeValidationRoot | Out-Null
         New-ManagedInstallPayloadStage `
@@ -1466,10 +1468,10 @@ if ($ValidatePackageOnly) {
             -InstallId ([guid]::NewGuid().ToString('D')) `
             -InstallDirectory $installDir
         $upgradeVersionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo(
-            (Join-Path $upgradeValidationRoot 'Switzerland VPN.exe')
+            (Join-Path $upgradeValidationRoot 'Swiss Army VPN.exe')
         )
         if ($upgradeVersionInfo.CompanyName -ne $publisher -or
-            $upgradeVersionInfo.FileVersion -ne ($installVersion + '.0')) {
+            $upgradeVersionInfo.FileVersion -ne (Get-ExpectedFileVersion $installVersion)) {
             throw 'The staged upgrade validation failed its publisher or version check.'
         }
         Assert-ManagedInstallFileLayout `
@@ -1506,7 +1508,7 @@ if (-not (Test-Administrator)) {
         if ($_.Exception -is [ComponentModel.Win32Exception] -and $_.Exception.NativeErrorCode -eq 1223) {
             [Windows.Forms.MessageBox]::Show(
                 'Installation was canceled. No changes were made.',
-                'Switzerland VPN Installation Canceled',
+                'Swiss Army VPN Installation Canceled',
                 [Windows.Forms.MessageBoxButtons]::OK,
                 [Windows.Forms.MessageBoxIcon]::Information
             ) | Out-Null
@@ -1515,7 +1517,7 @@ if (-not (Test-Administrator)) {
 
         [Windows.Forms.MessageBox]::Show(
             "Windows could not open the Administrator approval prompt.`r`n`r`n$($_.Exception.Message)",
-            'Switzerland VPN Installation Stopped',
+            'Swiss Army VPN Installation Stopped',
             [Windows.Forms.MessageBoxButtons]::OK,
             [Windows.Forms.MessageBoxIcon]::Error
         ) | Out-Null
@@ -1546,12 +1548,16 @@ try {
         catch {
             throw 'The existing installation version record is damaged. Nothing was changed.'
         }
-        if (@('1.0.9', '1.1.0', '1.1.1', '1.1.2', '1.2.0', '1.3.0', '1.3.1', '1.3.2', '1.3.3', '1.4.0', '1.4.1', '1.4.2') -cnotcontains $recordedVersion) {
+        # 1.5.0.0 is the first Swiss Army VPN release, so there is no earlier version of this
+        # product to upgrade from. The list stays empty until 1.5.0.0 has actually shipped; the
+        # next release adds it. Switzerland VPN installs are a different product and are rejected
+        # earlier, by the ProductName check on the ownership marker.
+        if (@() -cnotcontains $recordedVersion) {
             throw "The installed version $recordedVersion cannot be upgraded by this package. Nothing was changed."
         }
         $managedUpgradeContext = Get-ValidatedManagedUpgradeContext `
             -ExpectedVersion $recordedVersion `
-            -RequireUpdateHelper:($recordedVersion -in @('1.1.0', '1.1.1', '1.1.2', '1.2.0', '1.3.0', '1.3.1', '1.3.2', '1.3.3', '1.4.0', '1.4.1', '1.4.2'))
+            -RequireUpdateHelper
     }
     if ((Test-Path -LiteralPath $installDir) -and -not $existingFolderIsManaged) {
         $items = @(Get-ChildItem -LiteralPath $installDir -Force -ErrorAction SilentlyContinue)
@@ -1567,8 +1573,8 @@ try {
         }
     }
 
-    $commonDesktopCollision = Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) 'Switzerland VPN.lnk'
-    $commonStartCollision = Join-Path ([Environment]::GetFolderPath('CommonPrograms')) 'Switzerland VPN'
+    $commonDesktopCollision = Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) 'Swiss Army VPN.lnk'
+    $commonStartCollision = Join-Path ([Environment]::GetFolderPath('CommonPrograms')) 'Swiss Army VPN'
     if (-not $existingFolderIsManaged) {
         foreach ($collisionPath in $commonDesktopCollision, $commonStartCollision, $uninstallKey) {
             if (Test-Path -LiteralPath $collisionPath) {
@@ -1580,7 +1586,7 @@ try {
 catch {
     [Windows.Forms.MessageBox]::Show(
         "Installation could not continue. No changes were made.`r`n`r`n$($_.Exception.Message)",
-        'Switzerland VPN Installation Stopped',
+        'Swiss Army VPN Installation Stopped',
         [Windows.Forms.MessageBoxButtons]::OK,
         [Windows.Forms.MessageBoxIcon]::Error
     ) | Out-Null
@@ -1589,8 +1595,8 @@ catch {
 
 if ($null -ne $managedUpgradeContext) {
     $answer = [Windows.Forms.MessageBox]::Show(
-        "Upgrade Switzerland VPN from $($managedUpgradeContext.OldVersion) to ${installVersion}?`r`n`r`nOnly the app files and protected version records will change. The VPN profile, saved sign-in, certificate, connection, kill switch, firewall rules, and VPN server setting will stay as they are.",
-        'Upgrade Switzerland VPN',
+        "Upgrade Swiss Army VPN from $($managedUpgradeContext.OldVersion) to ${installVersion}?`r`n`r`nOnly the app files and protected version records will change. The VPN profile, saved sign-in, certificate, connection, kill switch, firewall rules, and VPN server setting will stay as they are.",
+        'Upgrade Swiss Army VPN',
         [Windows.Forms.MessageBoxButtons]::YesNo,
         [Windows.Forms.MessageBoxIcon]::Question,
         [Windows.Forms.MessageBoxDefaultButton]::Button1
@@ -1603,17 +1609,17 @@ if ($null -ne $managedUpgradeContext) {
     catch {
         [Windows.Forms.MessageBox]::Show(
             "The app upgrade stopped.`r`n`r`n$($_.Exception.Message)`r`n`r`nThe VPN profile, connection, sign-in, certificate, and firewall rules were not changed.",
-            'Switzerland VPN Upgrade Stopped',
+            'Swiss Army VPN Upgrade Stopped',
             [Windows.Forms.MessageBoxButtons]::OK,
             [Windows.Forms.MessageBoxIcon]::Error
         ) | Out-Null
         exit 2
     }
 
-    $exePath = Join-Path $installDir 'Switzerland VPN.exe'
+    $exePath = Join-Path $installDir 'Swiss Army VPN.exe'
     $runNow = [Windows.Forms.MessageBox]::Show(
-        "Upgrade complete. Run Switzerland VPN now?",
-        'Switzerland VPN Upgraded',
+        "Upgrade complete. Run Swiss Army VPN now?",
+        'Swiss Army VPN Upgraded',
         [Windows.Forms.MessageBoxButtons]::YesNo,
         [Windows.Forms.MessageBoxIcon]::Question,
         [Windows.Forms.MessageBoxDefaultButton]::Button1
@@ -1625,7 +1631,7 @@ if ($null -ne $managedUpgradeContext) {
         catch {
             [Windows.Forms.MessageBox]::Show(
                 'The upgrade succeeded, but Windows could not open the app automatically. Open it from the Desktop or Start menu.',
-                'Switzerland VPN Upgraded',
+                'Swiss Army VPN Upgraded',
                 [Windows.Forms.MessageBoxButtons]::OK,
                 [Windows.Forms.MessageBoxIcon]::Warning
             ) | Out-Null
@@ -1635,7 +1641,7 @@ if ($null -ne $managedUpgradeContext) {
 }
 
 $message = @"
-Install Switzerland VPN for all users?
+Install Swiss Army VPN for all users?
 
 Folder: $installDir
 
@@ -1648,7 +1654,7 @@ Continue?
 "@
 $answer = [Windows.Forms.MessageBox]::Show(
     $message,
-    'Install Switzerland VPN',
+    'Install Swiss Army VPN',
     [Windows.Forms.MessageBoxButtons]::YesNo,
     [Windows.Forms.MessageBoxIcon]::Warning,
     [Windows.Forms.MessageBoxDefaultButton]::Button2
@@ -1660,7 +1666,7 @@ if ($matchingProfiles.Count -gt 0) {
     $profileList = Format-VpnProfileList -Profiles $matchingProfiles
     $collisionAnswer = [Windows.Forms.MessageBox]::Show(
         "These matching Swiss VPN profiles will be replaced:`r`n`r`n$profileList`r`n`r`nTheir saved credentials will be cleared. USA and unrelated profiles stay unchanged. Continue?",
-        'Replace Switzerland VPN Profiles',
+        'Replace Swiss Army VPN Profiles',
         [Windows.Forms.MessageBoxButtons]::YesNo,
         [Windows.Forms.MessageBoxIcon]::Warning,
         [Windows.Forms.MessageBoxDefaultButton]::Button2
@@ -1710,7 +1716,7 @@ try {
         $remainingSwissProfiles[0].Scope -ne 'All users' -or
         $remainingSwissProfiles[0].Name -ne $vpnName -or
         $remainingSwissProfiles[0].ServerAddress -ne $serverAddress) {
-        throw 'Windows did not retain exactly one canonical all-user Switzerland VPN profile.'
+        throw 'Windows did not retain exactly one canonical all-user Swiss Army VPN profile.'
     }
 
     # Repeat the trust checks immediately before creating privileged content so
@@ -1738,14 +1744,13 @@ try {
 
     foreach ($name in @(
         'Emergency Unlock.exe'
-        'Switzerland VPN.exe'
-        'Switzerland VPN.ico'
-        'Switzerland VPN.png'
-        'Switzerland VPN Background.png'
+        'Swiss Army VPN.exe'
+        'Swiss Army VPN.ico'
+        'Swiss Army VPN.png'
     )) {
         Copy-Item -LiteralPath (Join-Path $payloadDir $name) -Destination (Join-Path $installDir $name) -Force
     }
-    foreach ($name in @('Update Switzerland VPN.ps1', 'Uninstall Switzerland VPN.ps1', 'Emergency Unlock.ps1', 'Switch Switzerland VPN Server.ps1')) {
+    foreach ($name in @('Update Swiss Army VPN.ps1', 'Uninstall Swiss Army VPN.ps1', 'Emergency Unlock.ps1', 'Switch Swiss Army VPN Server.ps1')) {
         Copy-Item -LiteralPath (Join-Path $powershellBackupDir $name) -Destination (Join-Path $installDir $name) -Force
     }
     [IO.File]::WriteAllText((Join-Path $installDir 'VPN Server.txt'), $serverAddress + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
@@ -1761,33 +1766,33 @@ try {
 
     $desktop = [Environment]::GetFolderPath('CommonDesktopDirectory')
     $programs = [Environment]::GetFolderPath('CommonPrograms')
-    $startFolder = Join-Path $programs 'Switzerland VPN'
+    $startFolder = Join-Path $programs 'Swiss Army VPN'
     $shortcutCreationStarted = $true
     New-Item -ItemType Directory -Path $startFolder -Force | Out-Null
-    $exePath = Join-Path $installDir 'Switzerland VPN.exe'
+    $exePath = Join-Path $installDir 'Swiss Army VPN.exe'
     $emergencyUnlockPath = Join-Path $installDir 'Emergency Unlock.exe'
     $powershellPath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
-    New-Shortcut -Path (Join-Path $desktop 'Switzerland VPN.lnk') -Target $exePath -Arguments '' -WorkingDirectory $installDir -IconLocation "$exePath,0"
-    New-Shortcut -Path (Join-Path $startFolder 'Switzerland VPN.lnk') -Target $exePath -Arguments '' -WorkingDirectory $installDir -IconLocation "$exePath,0"
+    New-Shortcut -Path (Join-Path $desktop 'Swiss Army VPN.lnk') -Target $exePath -Arguments '' -WorkingDirectory $installDir -IconLocation "$exePath,0"
+    New-Shortcut -Path (Join-Path $startFolder 'Swiss Army VPN.lnk') -Target $exePath -Arguments '' -WorkingDirectory $installDir -IconLocation "$exePath,0"
     New-Shortcut -Path (Join-Path $startFolder 'Emergency Unlock.lnk') -Target $emergencyUnlockPath `
         -Arguments '' -WorkingDirectory $installDir -IconLocation "$emergencyUnlockPath,0"
     New-Shortcut -Path (Join-Path $startFolder 'Choose Swiss VPN Server.lnk') -Target $powershellPath `
-        -Arguments "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $installDir 'Switch Switzerland VPN Server.ps1')`"" `
+        -Arguments "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $installDir 'Switch Swiss Army VPN Server.ps1')`"" `
         -WorkingDirectory $installDir -IconLocation "$exePath,0"
-    New-Shortcut -Path (Join-Path $startFolder 'Uninstall Switzerland VPN.lnk') -Target $powershellPath `
-        -Arguments "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $installDir 'Uninstall Switzerland VPN.ps1')`"" `
+    New-Shortcut -Path (Join-Path $startFolder 'Uninstall Swiss Army VPN.lnk') -Target $powershellPath `
+        -Arguments "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $installDir 'Uninstall Swiss Army VPN.ps1')`"" `
         -WorkingDirectory $env:SystemRoot -IconLocation "$exePath,0"
     Remove-VerifiedPerUserShortcuts -InstalledExecutable $exePath -PowerShellExecutable $powershellPath
 
     $registryCreationStarted = $true
     New-Item -Path $uninstallKey -Force | Out-Null
-    New-ItemProperty -Path $uninstallKey -Name DisplayName -Value 'Switzerland VPN' -PropertyType String -Force | Out-Null
+    New-ItemProperty -Path $uninstallKey -Name DisplayName -Value 'Swiss Army VPN' -PropertyType String -Force | Out-Null
     New-ItemProperty -Path $uninstallKey -Name DisplayVersion -Value $installVersion -PropertyType String -Force | Out-Null
     New-ItemProperty -Path $uninstallKey -Name Publisher -Value $publisher -PropertyType String -Force | Out-Null
     New-ItemProperty -Path $uninstallKey -Name DisplayIcon -Value "$exePath,0" -PropertyType String -Force | Out-Null
     New-ItemProperty -Path $uninstallKey -Name InstallLocation -Value $installDir -PropertyType String -Force | Out-Null
     New-ItemProperty -Path $uninstallKey -Name UninstallString `
-        -Value "$powershellPath -NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $installDir 'Uninstall Switzerland VPN.ps1')`"" `
+        -Value "$powershellPath -NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $installDir 'Uninstall Swiss Army VPN.ps1')`"" `
         -PropertyType String -Force | Out-Null
     New-ItemProperty -Path $uninstallKey -Name NoModify -Value 1 -PropertyType DWord -Force | Out-Null
     New-ItemProperty -Path $uninstallKey -Name NoRepair -Value 1 -PropertyType DWord -Force | Out-Null
@@ -1849,7 +1854,7 @@ catch {
     }
     if (-not $existingFolderIsManaged -and (Test-Path -LiteralPath $stateDir)) {
         try {
-            if ((Get-ExactFullPath $stateDir) -eq (Get-ExactFullPath (Join-Path $env:ProgramData 'Switzerland VPN')) -and
+            if ((Get-ExactFullPath $stateDir) -eq (Get-ExactFullPath (Join-Path $env:ProgramData 'Swiss Army VPN')) -and
                 (((Get-Item -LiteralPath $stateDir -Force).Attributes -band
                     [IO.FileAttributes]::ReparsePoint) -eq 0)) {
                 Remove-Item -LiteralPath $stateDir -Recurse -Force
@@ -1860,7 +1865,7 @@ catch {
 
     [Windows.Forms.MessageBox]::Show(
         "Installation failed and package-created changes were rolled back where possible.`r`n`r`n$failure",
-        'Switzerland VPN Installation Failed',
+        'Swiss Army VPN Installation Failed',
         [Windows.Forms.MessageBoxButtons]::OK,
         [Windows.Forms.MessageBoxIcon]::Error
     ) | Out-Null
@@ -1868,8 +1873,8 @@ catch {
 }
 
 $runNow = [Windows.Forms.MessageBox]::Show(
-    "Installation complete. Run Switzerland VPN now?`r`n`r`nUse SET UP SIGN-IN if needed.",
-    'Switzerland VPN Installed',
+    "Installation complete. Run Swiss Army VPN now?`r`n`r`nUse SET UP SIGN-IN if needed.",
+    'Swiss Army VPN Installed',
     [Windows.Forms.MessageBoxButtons]::YesNo,
     [Windows.Forms.MessageBoxIcon]::Question,
     [Windows.Forms.MessageBoxDefaultButton]::Button1
@@ -1881,8 +1886,8 @@ if ($runNow -eq [Windows.Forms.DialogResult]::Yes) {
     }
     catch {
         [Windows.Forms.MessageBox]::Show(
-            "Switzerland VPN installed successfully, but Windows could not open it automatically.`r`n`r`nOpen it from the Desktop or Start menu.",
-            'Switzerland VPN Installed',
+            "Swiss Army VPN installed successfully, but Windows could not open it automatically.`r`n`r`nOpen it from the Desktop or Start menu.",
+            'Swiss Army VPN Installed',
             [Windows.Forms.MessageBoxButtons]::OK,
             [Windows.Forms.MessageBoxIcon]::Warning
         ) | Out-Null

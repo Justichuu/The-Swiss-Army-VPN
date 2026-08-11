@@ -13,11 +13,11 @@ internal static class TrayRestoreLifecycleHarness
         Application.SetCompatibleTextRenderingDefault(false);
 
         Assembly widgetAssembly = Assembly.LoadFrom(args[0]);
-        Type formType = widgetAssembly.GetType("SwitzerlandVpn.VpnForm", true);
+        Type formType = widgetAssembly.GetType("SwissArmyVpn.VpnForm", true);
         ConstructorInfo constructor = formType.GetConstructor(
             BindingFlags.Instance | BindingFlags.NonPublic,
             null,
-            new[] { widgetAssembly.GetType("SwitzerlandVpn.WidgetState", true) },
+            new[] { widgetAssembly.GetType("SwissArmyVpn.WidgetState", true) },
             null);
         MethodInfo restore = formType.GetMethod("RestoreFromTray", BindingFlags.Instance | BindingFlags.NonPublic);
         if (constructor == null || restore == null) throw new MissingMethodException("Tray lifecycle members were not found.");

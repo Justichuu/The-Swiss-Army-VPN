@@ -7,7 +7,7 @@ Run these checks on a disposable feature build before publishing a release. Comp
 1. Record the current server from the widget and from elevated PowerShell:
 
    ```powershell
-   Get-VpnConnection -Name 'Switzerland VPN' -AllUserConnection | Select-Object Name,ServerAddress,ConnectionStatus
+   Get-VpnConnection -Name 'Swiss Army VPN' -AllUserConnection | Select-Object Name,ServerAddress,ConnectionStatus
    ```
 
 2. Confirm **DISCONNECT + UNLOCK** leaves the VPN disconnected and no managed kill-switch rules remain.
