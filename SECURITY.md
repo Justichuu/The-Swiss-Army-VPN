@@ -1,5 +1,8 @@
 # Security
 
-Never post VPN credentials in an issue, commit, screenshot, or release.
+Never post a VPN login in an issue, commit, screenshot, or release.
 
-Report security problems privately through GitHub's security-advisory feature. Include the app version and the exact Windows error, but remove usernames, passwords, IP addresses, and personal paths.
+Report a hole through GitHub security advisories. Say the app version and the Windows error. Take out names, passwords, IP addresses, and home paths. If you have a dump, run the state scrubber first.
+
+This project will not ask for your face, your voice, or a timed puzzle.
+

@@ -1,8 +1,8 @@
 # Swiss Army VPN — Feature Roadmap
 
-- **Version:** 1.3.3
-- **Status:** Release Verification / Maintenance
-- **Last Updated:** 2026-07-23
+- **Version:** 1.5.0.0
+- **Status:** Book, polish, and open proposals
+- **Last Updated:** 2026-08-29
 
 ---
 
@@ -76,7 +76,7 @@ This document outlines the feature roadmap for The Swiss Army VPN, a privacy-foc
 
 ### 🎨 UI/UX Innovations
 
-*Note: Current priority includes release validation and documentation alongside feature development.*
+*Note: The short book in `docs/book/` is the current reading path. Colour key and symmetry stay in the widget.*
 
 | # | Feature | Description | Status |
 |---|---------|-------------|--------|
