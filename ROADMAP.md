@@ -1,8 +1,8 @@
 # Swiss Army VPN — Feature Roadmap
 
-- **Version:** 1.3.3
-- **Status:** Release Verification / Maintenance
-- **Last Updated:** 2026-07-23
+- **Version:** 1.5.1.0
+- **Status:** Bring-your-own connect / Maintenance
+- **Last Updated:** 2026-08-29
 
 ---
 
@@ -22,7 +22,7 @@ This document outlines the feature roadmap for The Swiss Army VPN, a privacy-foc
   - Separate vetted live-server filters and offline seed pools per country
   - Fail-closed kill-switch preserved across all connection changes
   - Country switching treated as deliberate reconfiguration (not automatic failover)
-- **Status:** ✅ Planned for v1.2.0
+- **Status:** ✅ Superseded by the widget server mode (Swiss / Any NordVPN / Bring your own) in v1.5.1.0. Fresh installs still default to the packaged Swiss server.
 
 ---
 

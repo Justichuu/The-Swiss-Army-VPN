@@ -8,10 +8,10 @@ This project is a learning experience more than anything: an experiment in mixin
 
 ## What it does
 
-- Connects a managed Swiss Army VPN profile.
+- Connects a managed Swiss Army VPN IKEv2 profile.
 - Arms a whole-computer, fail-closed Windows Firewall kill switch.
 - Shows live tunnel traffic and protected latency on demand.
-- Includes an editable Swiss server dropdown and an optional custom NordVPN-country mode.
+- Includes an editable Swiss server dropdown, any official NordVPN country, and bring-your-own connect for any IKEv2 hostname or IPv4 address.
 - Verifies exact assets from immutable private releases.
 - Includes install, uninstall, emergency unlock, and PowerShell backup tools.
 
@@ -32,11 +32,17 @@ Credentials are never included. Use valid NordVPN manual-service credentials. In
 
 ## Choose a VPN server
 
-The widget's editable **SERVER** dropdown lists the packaged Swiss server pool. Select an entry or type a hostname, then choose **APPLY**. Swiss-only mode accepts `ch<number>.nordvpn.com`. Enable **Allow any NordVPN country server** to enter another official numbered endpoint such as `us1234.nordvpn.com`.
+The widget's editable **SERVER** dropdown lists the packaged Swiss server pool. Select an entry or type a hostname, then choose **APPLY**. The mode box next to **CURRENT** picks how strictly that hostname is checked:
+
+- **Swiss NordVPN** accepts `ch<number>.nordvpn.com`.
+- **Any NordVPN** accepts official numbered endpoints such as `us1234.nordvpn.com`.
+- **Bring your own** accepts any safe IKEv2 hostname or IPv4 address: Proton, Surfshark, a corporate concentrator, a home-lab StrongSwan box, `vpn.company.local`, or `10.0.0.1`.
+
+Bring-your-own still uses Windows' built-in IKEv2 client and the username/password from **SET UP SIGN-IN**. WireGuard, OpenVPN, and other third-party tunnel apps are not driven by this widget. Fresh installs still start on the packaged Swiss server; you opt into another endpoint after that.
 
 Disconnect and unlock before changing servers. Administrator approval is required because the switch updates the all-users Windows VPN profile, `VPN Server.txt`, and the protected installation record together. It validates DNS first and rolls all three values back if the update cannot be verified.
 
-The Start-menu **Choose Swiss VPN Server** tool remains available for automatic selection. It fetches NordVPN's current online Swiss IKEv2 list, chooses the lowest-load resolvable server, and falls back to `VPN Servers.txt` when the live service is unavailable. Advanced users can run `Switch Swiss Army VPN Server.ps1 -List`, select a Swiss endpoint with `-Server ch123.nordvpn.com`, or deliberately allow another country with `-Server us1234.nordvpn.com -AllowAnyNordVpn`.
+The Start-menu **Choose Swiss VPN Server** tool remains available for automatic Swiss selection. It fetches NordVPN's current online Swiss IKEv2 list, chooses the lowest-load resolvable server, and falls back to `VPN Servers.txt` when the live service is unavailable. Advanced users can run `Switch Swiss Army VPN Server.ps1 -List`, select a Swiss endpoint with `-Server ch123.nordvpn.com`, allow another NordVPN country with `-Server us1234.nordvpn.com -AllowAnyNordVpn`, or point the profile at any IKEv2 host with `-Server ikev2.example.com -BringYourOwn`.
 
 The first release containing a new package file may require one manual install because older exact-allowlist updaters reject unfamiliar files. Run `Install Swiss Army VPN.exe`; subsequent compatible releases can update normally. The `.cmd` launcher remains available only as a troubleshooting fallback.
 

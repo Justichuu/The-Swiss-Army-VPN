@@ -15,7 +15,24 @@ Swiss Army VPN project with executable installer and emergency unlock support. B
 
 **Important:** The kill switch affects the whole computer while armed. The app may disconnect other active Windows RAS VPN sessions during a controlled connection change. Use **DISCONNECT + UNLOCK** to restore normal internet.
 
-## Current Status (as of 2026-07-23)
+## Current Status (as of 2026-08-29)
+
+### v1.5.1.0 - Bring your own connect (2026-08-29)
+
+- **Requested:** Make the widget useful for any VPN, not only numbered NordVPN hosts, and fix the
+  issues that already broke non-Swiss servers.
+- **Bug:** "Any NordVPN country" could save `us1234.nordvpn.com`, but upgrade, uninstall, update,
+  and Emergency Unlock helper lookup still required a Swiss `ch<number>.nordvpn.com` install-state
+  address. A working country switch left the machine unable to upgrade or, in the state-based
+  path, find Emergency Unlock's helper.
+- **Bring your own:** The widget now has three server modes: Swiss NordVPN, Any NordVPN, and
+  Bring your own. BYO accepts a safe IKEv2 hostname or IPv4 address (Proton, corporate,
+  self-hosted StrongSwan, RFC1918 lab boxes). The kill switch resolves that endpoint and allows
+  public or private IPv4, still rejecting loopback, link-local, and multicast.
+- **Not in scope:** The widget still dials the managed Windows IKEv2 profile. WireGuard, OpenVPN,
+  and other third-party tunnel apps are not driven by CONNECT.
+- Fresh installs still start on the packaged Swiss server. BYO is an explicit post-install choice.
+- Version is `1.5.1.0` so local `1.5.0.0` installs can take a managed upgrade.
 
 ### v1.4.5.0 - IPv6 transition tunnel guidance (2026-08-11)
 
@@ -84,7 +101,7 @@ fresh-install and upgrade paths do copy it. The validator was left strict on pur
 - Corrected the v1.4.2 tray restore regression by restoring the required WinForms `Show()` then `WindowState = Normal` ordering; v1.4.3 permits managed upgrades from v1.4.2.
 - Full v1.4.3 manual installation, UI, connection, kill-switch, rollback, and recovery testing remains pending.
 
-- **Latest Version**: v1.3.3 ✅ (live upgrade verification recorded, all issues resolved)
+- **Latest Version**: v1.5.1.0 (bring-your-own connect; Windows live verification still required)
 - **Active Development**: Release verifier integration, distribution validation, and installer documentation
 - **Recent Focus**:
   - ✅ Verifier executable created: `Verify Swiss Army VPN Release 1.3.3.exe`
@@ -218,7 +235,7 @@ underneath it. The build validates:
 
 ### Credentials & Security
 
-- Use valid NordVPN manual-service credentials (never included in code)
+- Use valid VPN credentials for the selected server (never included in code). NordVPN manual-service credentials still work for Swiss / Any NordVPN modes.
 - Installing/changing protection requires administrator approval
 - No GitHub token stored in the app
 - Private updates require system-wide GitHub CLI 2.96+ and `gh auth login` with account access to this repository
@@ -239,5 +256,5 @@ All release incidents are documented in `docs/incidents/`. Review these before m
 - Upgrade paths between versions
 
 ---
-*Last updated: 2026-07-23 | Total commits: ~19 | Verifier status: VERIFIED ✅ | Branches ready for PR review*
+*Last updated: 2026-08-29 | Latest version: 1.5.1.0 | Bring-your-own connect added; Windows live verification still required*
 <EOF>

@@ -2,11 +2,13 @@
 [CmdletBinding(DefaultParameterSetName = 'Best')]
 param(
     [Parameter(ParameterSetName = 'Server', Mandatory)]
-    [ValidatePattern('(?i)^[a-z]{2}[0-9]+\.nordvpn\.com$')]
     [string]$Server,
 
     [Parameter(ParameterSetName = 'Server')]
     [switch]$AllowAnyNordVpn,
+
+    [Parameter(ParameterSetName = 'Server')]
+    [switch]$BringYourOwn,
 
     [Parameter(ParameterSetName = 'List', Mandatory)]
     [switch]$List,
@@ -41,7 +43,8 @@ function Request-AdministratorRelaunch {
     )
     if ($PSCmdlet.ParameterSetName -eq 'Server') {
         $arguments += '-Server', ('"{0}"' -f $Server)
-        if ($AllowAnyNordVpn) { $arguments += '-AllowAnyNordVpn' }
+        if ($BringYourOwn) { $arguments += '-BringYourOwn' }
+        elseif ($AllowAnyNordVpn) { $arguments += '-AllowAnyNordVpn' }
     }
     else {
         $arguments += '-Best'
@@ -98,16 +101,73 @@ function Get-LiveServers {
     }
 }
 
+# --- managed-server-address-begin ---
+function Test-ManagedServerAddress {
+    param(
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]$Value
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Value)) { return $false }
+    $normalized = $Value.Trim().ToLowerInvariant()
+    if ($normalized.Length -gt 253) { return $false }
+
+    $parsed = [Net.IPAddress]::None
+    if ($normalized -match '^\d{1,3}(?:\.\d{1,3}){3}$' -and
+        [Net.IPAddress]::TryParse($normalized, [ref]$parsed)) {
+        if ($parsed.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork) { return $false }
+        $bytes = $parsed.GetAddressBytes()
+        if ($bytes[0] -eq 0 -or $bytes[0] -eq 127) { return $false }
+        if ($bytes[0] -eq 169 -and $bytes[1] -eq 254) { return $false }
+        if ($bytes[0] -ge 224) { return $false }
+        return $true
+    }
+
+    if ($normalized -match '[:/\\ @\$;`|&<>''"()\[\]{}#?%!,~]') { return $false }
+    if ($normalized.StartsWith('.') -or $normalized.EndsWith('.') -or $normalized.Contains('..')) { return $false }
+    if ($normalized -notmatch '^[a-z0-9._-]+$') { return $false }
+    $labels = $normalized.Split('.')
+    if ($labels.Count -lt 2) { return $false }
+    foreach ($label in $labels) {
+        if ($label -notmatch '^(?:[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?|xn--[a-z0-9-]{1,59})$') {
+            return $false
+        }
+    }
+    return $true
+}
+# --- managed-server-address-end ---
+
+function Test-AllowedVpnIPv4 {
+    param([Parameter(Mandatory)][Net.IPAddress]$Address)
+
+    if ($Address.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork) { return $false }
+    $bytes = $Address.GetAddressBytes()
+    if ($bytes[0] -eq 0 -or $bytes[0] -eq 127) { return $false }
+    if ($bytes[0] -eq 169 -and $bytes[1] -eq 254) { return $false }
+    if ($bytes[0] -ge 224) { return $false }
+    return $true
+}
+
 function Resolve-PublicIPv4 {
     param([Parameter(Mandatory)][string]$Hostname)
+
+    $parsed = [Net.IPAddress]::None
+    if ($Hostname -match '^\d{1,3}(?:\.\d{1,3}){3}$' -and
+        [Net.IPAddress]::TryParse($Hostname, [ref]$parsed)) {
+        if (-not (Test-AllowedVpnIPv4 -Address $parsed)) {
+            throw "$Hostname is not an allowed VPN IPv4 address."
+        }
+        return
+    }
 
     $addresses = @(
         Resolve-DnsName -Name $Hostname -Type A -ErrorAction Stop |
             Where-Object IPAddress |
             ForEach-Object { [Net.IPAddress]::Parse($_.IPAddress) } |
-            Where-Object { $_.AddressFamily -eq [Net.Sockets.AddressFamily]::InterNetwork }
+            Where-Object { Test-AllowedVpnIPv4 -Address $_ }
     )
-    if ($addresses.Count -eq 0) { throw "$Hostname did not resolve to an IPv4 address." }
+    if ($addresses.Count -eq 0) { throw "$Hostname did not resolve to an allowed IPv4 address." }
 }
 
 function Get-CandidateServers {
@@ -137,11 +197,19 @@ function Set-ManagedServer {
     if (-not (Test-Administrator)) {
         throw 'Run this script from PowerShell as Administrator to change the VPN server.'
     }
-    if ($Hostname -notmatch '(?i)^[a-z]{2}[0-9]+\.nordvpn\.com$') {
-        throw 'Enter an official NordVPN hostname such as ch221.nordvpn.com or us1234.nordvpn.com.'
+    $Hostname = $Hostname.Trim().ToLowerInvariant()
+    if ($BringYourOwn) {
+        if (-not (Test-ManagedServerAddress -Value $Hostname)) {
+            throw 'Enter a VPN hostname or IPv4 address such as ikev2.example.com, vpn.company.local, or 203.0.113.10. URLs, ports, and IPv6 literals are not accepted.'
+        }
     }
-    if (-not $AllowAnyNordVpn -and $Hostname -notmatch '(?i)^ch[0-9]+\.nordvpn\.com$') {
-        throw 'Swiss-only mode accepts ch<number>.nordvpn.com servers. Enable Any NordVPN to use another country.'
+    else {
+        if ($Hostname -notmatch '(?i)^[a-z]{2}[0-9]+\.nordvpn\.com$') {
+            throw 'Enter an official NordVPN hostname such as ch221.nordvpn.com or us1234.nordvpn.com.'
+        }
+        if (-not $AllowAnyNordVpn -and $Hostname -notmatch '(?i)^ch[0-9]+\.nordvpn\.com$') {
+            throw 'Swiss-only mode accepts ch<number>.nordvpn.com servers. Enable Any NordVPN or Bring your own.'
+        }
     }
     Assert-SafeToSwitch
     Resolve-PublicIPv4 -Hostname $Hostname
@@ -193,8 +261,11 @@ if (-not $List -and -not (Test-Administrator)) {
     exit 0
 }
 
-$candidates = @(Get-CandidateServers)
-if ($candidates.Count -eq 0) { throw 'No Swiss IKEv2 servers were available from the live list or the seed pool.' }
+$candidates = @()
+if ($List -or $PSCmdlet.ParameterSetName -ne 'Server') {
+    $candidates = @(Get-CandidateServers)
+    if ($candidates.Count -eq 0) { throw 'No Swiss IKEv2 servers were available from the live list or the seed pool.' }
+}
 
 if ($List) {
     $candidates | Format-Table Hostname, Load, Source -AutoSize
@@ -202,7 +273,7 @@ if ($List) {
 }
 
 $selected = if ($PSCmdlet.ParameterSetName -eq 'Server') {
-    $Server.ToLowerInvariant()
+    $Server.Trim().ToLowerInvariant()
 }
 else {
     $reachable = $null
