@@ -110,6 +110,17 @@ foreach ($requiredFile in @(
     Assert-FileExists $requiredFile
 }
 
+$scrubberTest = Join-Path $repositoryRoot 'tests\Test-StatePhaseScrubber.py'
+Assert-FileExists $scrubberTest
+$python = Get-Command python, python3 -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($null -eq $python) {
+    throw 'Python is required to witness the state and phase scrubber.'
+}
+& $python.Source $scrubberTest
+if ($LASTEXITCODE -ne 0) {
+    throw "State and phase scrubber witness failed with exit code $LASTEXITCODE."
+}
+
 $escapedVersion = [regex]::Escape($Version)
 $expectedAssemblyVersion = $Version
 $sourceText = Get-Content -LiteralPath $sourceCode -Raw
