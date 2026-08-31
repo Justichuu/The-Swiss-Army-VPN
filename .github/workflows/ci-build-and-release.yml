@@ -32,6 +32,17 @@ jobs:
             .\scripts\Build-Release.ps1
           }
 
+      - name: Render remaining widget states
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -LiteralPath artifacts\builds -Recurse -Filter 'Swiss Army VPN.exe' |
+            Where-Object { $_.Directory.Name -eq 'Executables' } |
+            Select-Object -First 1
+          if ($null -eq $exe) {
+            throw 'Built widget executable was not found.'
+          }
+          .\scripts\Render-WidgetStatePreviews.ps1 -WidgetExecutable $exe.FullName
+
       - name: Upload validated artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -40,6 +51,13 @@ jobs:
             artifacts/builds/*/*.zip
             artifacts/builds/*/*SHA256.txt
             artifacts/builds/*/Verify*Release*.exe
+          if-no-files-found: error
+
+      - name: Upload widget state stills
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: widget-state-previews-${{ github.sha }}
+          path: artifacts/widget-previews/*.png
           if-no-files-found: error
 
   publish-release:

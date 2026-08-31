@@ -1,12 +1,18 @@
 # Swiss Army VPN — Feature Roadmap
 
-- **Version:** 1.3.3
+- **Version:** 1.5.0.0
 - **Status:** Release Verification / Maintenance
-- **Last Updated:** 2026-07-23
+- **Last Updated:** 2026-08-31
 
 ---
 
-## 📋 Overview
+## Don't write it
+
+The best code is the kind you don’t need to write. Unused screenshot states, a second installer, leftover names, and a second quoting helper were removed. Ideas in the **Not Planned** table stay as ideas. They are not product work.
+
+Remaining widget states are filmed from the live `--preview-state` renderer. That keeps the window honest without a second UI.
+
+## Overview
 
 This document outlines the feature roadmap for The Swiss Army VPN, a privacy-focused VPN client emphasizing transparency, security, and Swiss theming. Features are categorized by priority and implementation status.
 

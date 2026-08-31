@@ -1,6 +1,6 @@
 # VPN server selector manual test
 
-Run these checks on a disposable feature build before publishing a release. Compilation and the widget preview do not prove that Windows RAS, DNS, firewall state, elevation, or rollback works on the installed machine.
+Run these checks on a disposable feature build before publishing a release. Compilation and the widget preview (`--preview-state`) do not prove that Windows RAS, DNS, firewall state, elevation, or rollback works on the installed machine. The remaining-state GIF is that preview. Use this list for the live machine.
 
 ## Preconditions
 

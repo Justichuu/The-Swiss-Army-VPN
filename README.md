@@ -2,9 +2,33 @@
 
 A lightweight Windows tray widget for a Swiss Army VPN IKEv2 VPN, backed by Windows' built-in VPN client.
 
-This project is a learning experience more than anything: an experiment in mixing vibe coding with real technical knowledge. It has already come a long way, and the goal is to keep learning how to build apps that work reliably, scale cleanly, and reach users with no known bugs.
+The best code is the kind you don’t need to write. Unused screenshot states, a second installer the build never compiled, leftover names, and a second quoting helper are gone. The live widget is what remains.
 
-![Swiss Army VPN connecting and reporting protected latency](docs/media/vpn-working-demo/vpn-working-demo.gif)
+![Swiss Army VPN remaining states](docs/media/vpn-working-demo/vpn-working-demo.gif)
+
+Captions: [`docs/media/vpn-working-demo/CAPTIONS.md`](docs/media/vpn-working-demo/CAPTIONS.md). Green eye shut (`#2CC478`) means this machine is hidden. Red eye open (`#E24448`) means traffic can still be watched. Left is go. Right is stop.
+
+The film is a screen recording of the product. It is not a test of anyone’s body.
+
+Until Windows CI replaces it, the GIF at that path may still show the older Switzerland VPN window. The remaining-state stills come from the live executable’s `--preview-state` renderer, not from a second UI.
+
+## Remaining states
+
+These are the sitting states the widget can show. Deleted extras (`working2`, `working3`, `firewalloff-empty`) stay gone.
+
+| State | What you see |
+| --- | --- |
+| `disconnected` | VPN off. Normal internet. Eye open. |
+| `connecting` | Waiting on Windows while connect and arm run. |
+| `protected` | Tunnel up, kill switch armed. Eye shut. |
+| `working` | Protected, with live latency and traffic. |
+| `unprotected` | Tunnel up without the kill switch. Eye open. |
+| `blocked` | Tunnel down, kill switch on. Internet blocked. Eye shut. |
+| `incomplete` | Kill-switch rules are only partly there. Unlock and rebuild. |
+| `firewalloff` | Windows Firewall is off, so the kill switch cannot arm. |
+| `error` | Status could not be read. Refresh. |
+
+Busy wait screens (connect-only, arm-only, unlock-only) share the same blue “waiting for Windows” look. They are not extra product screens.
 
 ## What it does
 
@@ -51,6 +75,16 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\Build-Release.
 ```
 
 Build output goes to `artifacts\builds\<version>\` - each version gets its own folder. The build validates PowerShell syntax, package checksums, executable metadata, and the installer payload.
+
+To redraw the remaining-state stills from that build:
+
+```powershell
+$exe = Get-ChildItem .\artifacts\builds -Recurse -Filter 'Swiss Army VPN.exe' |
+  Where-Object { $_.Directory.Name -eq 'Executables' } |
+  Select-Object -First 1
+.\scripts\Render-WidgetStatePreviews.ps1 -WidgetExecutable $exe.FullName
+python3 .\scripts\assemble_widget_state_gif.py --input-directory .\artifacts\widget-previews
+```
 
 ## Important
 

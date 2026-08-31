@@ -1,0 +1,41 @@
+{
+  "description": "Remaining widget documentation states. Drawn by the live app via --preview-state. Deleted extras (working2, working3, firewalloff-empty) stay gone.",
+  "states": [
+    {
+      "name": "disconnected",
+      "caption": "Disconnected. Eye open. Normal internet."
+    },
+    {
+      "name": "connecting",
+      "caption": "Connecting and arming. Waiting on Windows."
+    },
+    {
+      "name": "protected",
+      "caption": "Connected and protected. Eye shut. Green."
+    },
+    {
+      "name": "working",
+      "caption": "Protected with live latency and traffic."
+    },
+    {
+      "name": "unprotected",
+      "caption": "VPN up, kill switch off. Eye open. Red."
+    },
+    {
+      "name": "blocked",
+      "caption": "VPN down, internet blocked. Eye shut."
+    },
+    {
+      "name": "incomplete",
+      "caption": "Kill switch setup incomplete. Unlock."
+    },
+    {
+      "name": "firewalloff",
+      "caption": "Windows Firewall is off. Cannot arm."
+    },
+    {
+      "name": "error",
+      "caption": "Status unavailable. Click Refresh."
+    }
+  ]
+}

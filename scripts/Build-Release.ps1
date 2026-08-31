@@ -286,10 +286,10 @@ try {
         throw "Package validation failed with exit code $LASTEXITCODE."
     }
 
-    foreach ($name in @('src', 'assets', 'installer', 'scripts')) {
+    foreach ($name in @('src', 'assets', 'installer', 'scripts', 'tests', 'docs')) {
         Copy-Item -LiteralPath (Join-Path $repositoryRoot $name) -Destination $sourceStage -Recurse -Force
     }
-    foreach ($name in @('README.md', 'ROADMAP.md', 'SECURITY.md', 'LICENSE', '.gitattributes', '.gitignore')) {
+    foreach ($name in @('README.md', 'ROADMAP.md', 'SECURITY.md', 'CONTEXT.md', 'LICENSE', '.gitattributes', '.gitignore')) {
         Copy-Item -LiteralPath (Join-Path $repositoryRoot $name) -Destination $sourceStage -Force
     }
 
