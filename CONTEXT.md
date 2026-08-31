@@ -15,18 +15,7 @@ Swiss Army VPN project with executable installer and emergency unlock support. B
 
 **Important:** The kill switch affects the whole computer while armed. The app may disconnect other active Windows RAS VPN sessions during a controlled connection change. Use **DISCONNECT + UNLOCK** to restore normal internet.
 
-The best code is the kind you don’t need to write. Unused screenshot states, a second installer, leftover names, and a second quoting helper were removed. Remaining widget states stay, and they are drawn by the live `--preview-state` renderer rather than a second UI.
-
-GitHub is the current source. A local clone goes stale until `git fetch` / `git pull`. The installed widget under Program Files is a different folder; pulling source does not replace it.
-
 ## Current Status (as of 2026-08-31)
-
-### Remaining widget states on film (2026-08-31)
-
-- Live sitting states: `disconnected`, `connecting`, `protected`, `working`, `unprotected`, `blocked`, `incomplete`, `firewalloff`, `error`.
-- Deleted extras stay gone: `working2`, `working3`, `firewalloff-empty`.
-- Windows CI stills: `scripts/Render-WidgetStatePreviews.ps1` calls the built `Swiss Army VPN.exe`. The README GIF is those stills. Captions live in `docs/media/vpn-working-demo/CAPTIONS.md`.
-- Eye: green shut `#2CC478` means hidden; red open `#E24448` means watched.
 
 ### v1.4.5.0 - IPv6 transition tunnel guidance (2026-08-11)
 

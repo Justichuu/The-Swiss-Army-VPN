@@ -2,31 +2,9 @@
 
 A lightweight Windows tray widget for a Swiss Army VPN IKEv2 VPN, backed by Windows' built-in VPN client.
 
-The best code is the kind you don’t need to write. Unused screenshot states, a second installer the build never compiled, leftover names, and a second quoting helper are gone. The live widget is what remains.
-
 ![Swiss Army VPN remaining states](docs/media/vpn-working-demo/vpn-working-demo.gif)
 
-Captions: [`docs/media/vpn-working-demo/CAPTIONS.md`](docs/media/vpn-working-demo/CAPTIONS.md). Green eye shut (`#2CC478`) means this machine is hidden. Red eye open (`#E24448`) means traffic can still be watched. Left is go. Right is stop.
-
-The film is the live widget. Each still is `Swiss Army VPN.exe --preview-state`, not a second UI. It is a screen recording of the product, not a test of anyone’s body.
-
-## Remaining states
-
-These are the sitting states the widget can show. Deleted extras (`working2`, `working3`, `firewalloff-empty`) stay gone.
-
-| State | What you see |
-| --- | --- |
-| `disconnected` | VPN off. Normal internet. Eye open. |
-| `connecting` | Waiting on Windows while connect and arm run. |
-| `protected` | Tunnel up, kill switch armed. Eye shut. |
-| `working` | Protected, with live latency and traffic. |
-| `unprotected` | Tunnel up without the kill switch. Eye open. |
-| `blocked` | Tunnel down, kill switch on. Internet blocked. Eye shut. |
-| `incomplete` | Kill-switch rules are only partly there. Unlock and rebuild. |
-| `firewalloff` | Windows Firewall is off, so the kill switch cannot arm. |
-| `error` | Status could not be read. Refresh. |
-
-Busy wait screens (connect-only, arm-only, unlock-only) share the same blue “waiting for Windows” look. They are not extra product screens.
+Green shut eye: hidden. Red open eye: watched. The lid moves; a hidden eye does not blink open.
 
 ## What it does
 
@@ -52,29 +30,7 @@ Release engineering incidents and their corrective actions are documented in
 
 Credentials are never included. Use valid NordVPN manual-service credentials. Installing or changing protection requires administrator approval.
 
-## This git folder
-
-GitHub is the current copy. A folder on the Windows machine goes stale until it fetches.
-
-`F:\Program Files\Swiss Army VPN` is the **installed** widget. Updating git does not change that folder. A new install or an update from a built distribution does.
-
-In the source clone, from PowerShell:
-
-```powershell
-git fetch origin
-git checkout main
-git pull origin main
-```
-
-That is Swiss Army VPN 1.5.0.0 on `main`. The remaining-state GIF and the unused-code cut are still on pull request [#27](https://github.com/Justichuu/The-Swiss-Army-VPN/pull/27):
-
-```powershell
-git fetch origin
-git checkout agent/delete-dead-code-7e94
-git pull origin agent/delete-dead-code-7e94
-```
-
-Do not use **Code → Download ZIP** for this. That is an old snapshot of source, not the git history and not the installed app.
+GitHub is current. `git fetch` then `git pull` in the clone. Program Files is the installed widget and does not change when git pulls.
 
 ## Choose a VPN server
 
@@ -98,21 +54,13 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\Build-Release.
 
 Build output goes to `artifacts\builds\<version>\` - each version gets its own folder. The build validates PowerShell syntax, package checksums, executable metadata, and the installer payload.
 
-To redraw the remaining-state stills from that build:
-
-```powershell
-$exe = Get-ChildItem .\artifacts\builds -Recurse -Filter 'Swiss Army VPN.exe' |
-  Where-Object { $_.Directory.Name -eq 'Executables' } |
-  Select-Object -First 1
-.\scripts\Render-WidgetStatePreviews.ps1 -WidgetExecutable $exe.FullName
-python3 .\scripts\assemble_widget_state_gif.py --input-directory .\artifacts\widget-previews
-```
-
 ## Important
 
 The kill switch affects the whole computer while armed. The app may disconnect other active Windows RAS VPN sessions during a controlled connection change. Use **DISCONNECT + UNLOCK** to restore normal internet.
 
 Current builds are unsigned, so Windows SmartScreen may show a warning. The release verifier makes checksum verification one click, but it does not turn an unsigned executable into a code-signed one.
+
+![Swiss Army VPN roadmap](ROADMAP.png)
 
 ## Woah
 

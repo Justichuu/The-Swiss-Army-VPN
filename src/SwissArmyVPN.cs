@@ -2463,7 +2463,14 @@ namespace SwissArmyVpn
         private static readonly Color UnknownColor = Color.FromArgb(128, 134, 148);
 
         private readonly Image mandala;
+        private readonly System.Windows.Forms.Timer lidTimer;
         private EyeVerdict verdict = EyeVerdict.Unknown;
+        private float lid = 1f;
+        private float lidTo = 1f;
+        private Color wash = UnknownColor;
+        private Color washTo = UnknownColor;
+        private int quietMs;
+        private bool frozen;
 
         internal EyeIndicator()
         {
@@ -2476,6 +2483,17 @@ namespace SwissArmyVpn
             BackColor = Color.Transparent;
             TabStop = false;
             mandala = LoadMandala();
+            lidTimer = new System.Windows.Forms.Timer { Interval = 32 };
+            lidTimer.Tick += StepLid;
+        }
+
+        internal void FreezeLid()
+        {
+            frozen = true;
+            lidTimer.Stop();
+            lid = lidTo = OpennessOf(verdict);
+            wash = washTo = ColorOf(verdict);
+            Invalidate();
         }
 
         internal EyeVerdict Verdict
@@ -2485,8 +2503,69 @@ namespace SwissArmyVpn
             {
                 if (verdict == value) return;
                 verdict = value;
-                Invalidate();
+                lidTo = OpennessOf(verdict);
+                washTo = ColorOf(verdict);
+                quietMs = 0;
+                if (frozen)
+                {
+                    lid = lidTo;
+                    wash = washTo;
+                    Invalidate();
+                    return;
+                }
+                lidTimer.Start();
             }
+        }
+
+        private static float OpennessOf(EyeVerdict value)
+        {
+            if (value == EyeVerdict.Hidden) return 0.06f;
+            if (value == EyeVerdict.Watched) return 1f;
+            return 0.45f;
+        }
+
+        private static Color ColorOf(EyeVerdict value)
+        {
+            if (value == EyeVerdict.Hidden) return HiddenColor;
+            if (value == EyeVerdict.Watched) return WatchedColor;
+            return UnknownColor;
+        }
+
+        private void StepLid(object sender, EventArgs e)
+        {
+            if (frozen || !Visible)
+            {
+                lidTimer.Stop();
+                return;
+            }
+
+            lid += (lidTo - lid) * 0.22f;
+            wash = Mix(wash, washTo, 0.22f);
+            bool settled = Math.Abs(lid - lidTo) < 0.02f;
+            if (settled)
+            {
+                lid = lidTo;
+                wash = washTo;
+                if (verdict != EyeVerdict.Watched)
+                {
+                    lidTimer.Stop();
+                    Invalidate();
+                    return;
+                }
+                quietMs += 32;
+                if (lid > 0.9f && quietMs > 5200) { lidTo = 0.06f; quietMs = 0; }
+                else if (lid < 0.12f) lidTo = 1f;
+            }
+            Invalidate();
+        }
+
+        private static Color Mix(Color from, Color to, float t)
+        {
+            return Color.FromArgb(
+                (int)(from.A + ((to.A - from.A) * t)),
+                (int)(from.R + ((to.R - from.R) * t)),
+                (int)(from.G + ((to.G - from.G) * t)),
+                (int)(from.B + ((to.B - from.B) * t)));
         }
 
         /// <summary>
@@ -2513,14 +2592,11 @@ namespace SwissArmyVpn
             }
         }
 
-        private Color VerdictColor
+        protected override void OnVisibleChanged(EventArgs e)
         {
-            get
-            {
-                if (verdict == EyeVerdict.Hidden) return HiddenColor;
-                if (verdict == EyeVerdict.Watched) return WatchedColor;
-                return UnknownColor;
-            }
+            base.OnVisibleChanged(e);
+            if (!Visible) lidTimer.Stop();
+            else if (!frozen && lid != lidTo) lidTimer.Start();
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -2533,18 +2609,13 @@ namespace SwissArmyVpn
             float size = Math.Min(Width, Height);
             float centreX = Width / 2f;
             float centreY = Height / 2f;
-            Color accent = VerdictColor;
+            Color accent = wash;
 
             DrawMandala(graphics, accent, size, centreX, centreY);
 
-            // Shut when traffic cannot be observed. The lid closes rather than the eye vanishing,
-            // so the two states read as the same object rather than two different icons.
-            float openness = verdict == EyeVerdict.Hidden ? 0.06f : 1f;
-            if (verdict == EyeVerdict.Unknown) openness = 0.45f;
-
             float reach = size * 0.29f;
-            float lift = reach * 0.62f * openness;
-            DrawEye(graphics, accent, centreX, centreY, reach, lift, openness);
+            float lift = reach * 0.62f * lid;
+            DrawEye(graphics, accent, centreX, centreY, reach, lift, lid);
         }
 
         private void DrawMandala(Graphics graphics, Color accent, float size, float centreX, float centreY)
@@ -2666,7 +2737,16 @@ namespace SwissArmyVpn
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing && mandala != null) mandala.Dispose();
+            if (disposing)
+            {
+                if (lidTimer != null)
+                {
+                    lidTimer.Stop();
+                    lidTimer.Tick -= StepLid;
+                    lidTimer.Dispose();
+                }
+                if (mandala != null) mandala.Dispose();
+            }
             base.Dispose(disposing);
         }
     }
@@ -2858,6 +2938,7 @@ namespace SwissArmyVpn
             Controls.Add(title);
 
             eyeIndicator = new EyeIndicator { Bounds = Grid.Eye };
+            if (preview != null) eyeIndicator.FreezeLid();
             Controls.Add(eyeIndicator);
             RegisterToolTip(title, "Swiss Army VPN controls.");
 
@@ -3250,6 +3331,7 @@ namespace SwissArmyVpn
             Show();
             Application.DoEvents();
             UpdateStatus();
+            if (eyeIndicator != null) eyeIndicator.FreezeLid();
             Application.DoEvents();
             using (Bitmap bitmap = new Bitmap(Width, Height))
             {
@@ -5702,14 +5784,8 @@ namespace SwissArmyVpn
         }
 
         /// <summary>
-        /// Maps each explicit display state to one complete set of widget and tray text, preventing
-        /// contradictory labels from being assembled from independent booleans.
-        /// </summary>
-        /// <summary>
-        /// The eye is shut only when nothing can observe this machine's traffic: either it is
-        /// inside the tunnel with the kill switch armed, or the kill switch is blocking everything.
-        /// Anything unproven leaves the eye open, matching the rule that a missing answer is never
-        /// treated as safety.
+        /// The eye is shut only when nothing can observe this machine's traffic.
+        /// Wait screens stay open: unproven is never treated as hidden.
         /// </summary>
         private static EyeVerdict GetEyeVerdict(WidgetDisplayState displayState)
         {
@@ -5719,6 +5795,13 @@ namespace SwissArmyVpn
                 case WidgetDisplayState.InternetBlocked:
                     return EyeVerdict.Hidden;
                 case WidgetDisplayState.Disconnected:
+                case WidgetDisplayState.Connecting:
+                case WidgetDisplayState.ConnectingOnly:
+                case WidgetDisplayState.ArmingOnly:
+                case WidgetDisplayState.PreparingSignIn:
+                case WidgetDisplayState.Disconnecting:
+                case WidgetDisplayState.DisconnectingOnly:
+                case WidgetDisplayState.UnlockingOnly:
                 case WidgetDisplayState.ConnectedWithoutProtection:
                 case WidgetDisplayState.ProtectionIncomplete:
                 case WidgetDisplayState.FirewallProtectionOff:
