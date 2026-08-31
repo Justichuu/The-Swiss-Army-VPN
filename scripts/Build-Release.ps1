@@ -4,7 +4,7 @@ param(
     # Four parts on purpose. The installer rejects same-version replacement, so a single fix can
     # need several packages; the fourth segment absorbs those without burning patch numbers.
     [ValidatePattern('^\d+\.\d+\.\d+\.\d+$')]
-    [string]$Version = '1.5.0.0',
+    [string]$Version = '1.5.1.0',
 
     [string]$OutputDirectory = ''
 )
@@ -108,6 +108,32 @@ foreach ($requiredFile in @(
     $installerScript
 )) {
     Assert-FileExists $requiredFile
+}
+
+$python = Get-Command python, python3 -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($null -eq $python) {
+    throw 'Python is required for the repository witnesses.'
+}
+
+$deadCodeTest = Join-Path $repositoryRoot 'tests\Test-DeadCodeGone.py'
+Assert-FileExists $deadCodeTest
+& $python.Source $deadCodeTest
+if ($LASTEXITCODE -ne 0) {
+    throw "Dead-code witness failed with exit code $LASTEXITCODE."
+}
+
+$hostnameTest = Join-Path $repositoryRoot 'tests\Test-ManagedServerAddress.ps1'
+Assert-FileExists $hostnameTest
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $hostnameTest
+if ($LASTEXITCODE -ne 0) {
+    throw "Managed server address validation failed with exit code $LASTEXITCODE."
+}
+
+$scrubberTest = Join-Path $repositoryRoot 'tests\Test-StatePhaseScrubber.py'
+Assert-FileExists $scrubberTest
+& $python.Source $scrubberTest
+if ($LASTEXITCODE -ne 0) {
+    throw "State and phase scrubber witness failed with exit code $LASTEXITCODE."
 }
 
 $escapedVersion = [regex]::Escape($Version)
@@ -275,10 +301,10 @@ try {
         throw "Package validation failed with exit code $LASTEXITCODE."
     }
 
-    foreach ($name in @('src', 'assets', 'installer', 'scripts')) {
+    foreach ($name in @('src', 'assets', 'installer', 'scripts', 'tests', 'docs')) {
         Copy-Item -LiteralPath (Join-Path $repositoryRoot $name) -Destination $sourceStage -Recurse -Force
     }
-    foreach ($name in @('README.md', 'ROADMAP.md', 'SECURITY.md', 'LICENSE', '.gitattributes', '.gitignore')) {
+    foreach ($name in @('README.md', 'ROADMAP.png', 'SECURITY.md', 'CONTEXT.md', 'LICENSE', '.gitattributes', '.gitignore')) {
         Copy-Item -LiteralPath (Join-Path $repositoryRoot $name) -Destination $sourceStage -Force
     }
 
