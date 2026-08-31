@@ -17,6 +17,8 @@ Swiss Army VPN project with executable installer and emergency unlock support. B
 
 The best code is the kind you don’t need to write. Unused screenshot states, a second installer, leftover names, and a second quoting helper were removed. Remaining widget states stay, and they are drawn by the live `--preview-state` renderer rather than a second UI.
 
+GitHub is the current source. A local clone goes stale until `git fetch` / `git pull`. The installed widget under Program Files is a different folder; pulling source does not replace it.
+
 ## Current Status (as of 2026-08-31)
 
 ### Remaining widget states on film (2026-08-31)

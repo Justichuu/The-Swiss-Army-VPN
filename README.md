@@ -52,6 +52,30 @@ Release engineering incidents and their corrective actions are documented in
 
 Credentials are never included. Use valid NordVPN manual-service credentials. Installing or changing protection requires administrator approval.
 
+## This git folder
+
+GitHub is the current copy. A folder on the Windows machine goes stale until it fetches.
+
+`F:\Program Files\Swiss Army VPN` is the **installed** widget. Updating git does not change that folder. A new install or an update from a built distribution does.
+
+In the source clone, from PowerShell:
+
+```powershell
+git fetch origin
+git checkout main
+git pull origin main
+```
+
+That is Swiss Army VPN 1.5.0.0 on `main`. The remaining-state GIF and the unused-code cut are still on pull request [#27](https://github.com/Justichuu/The-Swiss-Army-VPN/pull/27):
+
+```powershell
+git fetch origin
+git checkout agent/delete-dead-code-7e94
+git pull origin agent/delete-dead-code-7e94
+```
+
+Do not use **Code → Download ZIP** for this. That is an old snapshot of source, not the git history and not the installed app.
+
 ## Choose a VPN server
 
 The widget's editable **SERVER** dropdown lists the packaged Swiss server pool. Select an entry or type a hostname, then choose **APPLY**. Swiss-only mode accepts `ch<number>.nordvpn.com`. Enable **Allow any NordVPN country server** to enter another official numbered endpoint such as `us1234.nordvpn.com`.
