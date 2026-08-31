@@ -20,10 +20,17 @@ MUST_NOT_CONTAIN = [
     (ROOT / "src" / "SwissArmyVPN.cs", "working2"),
     (ROOT / "src" / "SwissArmyVPN.cs", "working3"),
     (ROOT / "src" / "SwissArmyVPN.cs", "firewalloff-empty"),
+    (ROOT / "src" / "SwissArmyVPN.cs", "private static string Quote("),
     (ROOT / ".github" / "workflows" / "ci-build-and-release.yml", "switzerland-vpn-"),
     (ROOT / "installer" / "Programs" / "PowershellBackup" / "Update Swiss Army VPN.ps1", "ManualBackup"),
     (ROOT / "installer" / "Programs" / "PowershellBackup" / "Install Swiss Army VPN.ps1", "ManualBackup"),
     (ROOT / "installer" / "Programs" / "Package Checksums.txt", "ManualBackup"),
+]
+
+MUST_CONTAIN = [
+    (ROOT / "src" / "SwissArmyVPN.cs", "internal static string QuoteArgument("),
+    (ROOT / "src" / "SwissArmyVPN.cs", "Arguments = PrivateUpdateManager.QuoteArgument(name)"),
+    (ROOT / "src" / "SwissArmyVPN.cs", '"-d " + PrivateUpdateManager.QuoteArgument(name)'),
 ]
 
 
@@ -36,6 +43,10 @@ def main() -> int:
         text = path.read_text(encoding="utf-8")
         if needle in text:
             failures.append(f"{path.relative_to(ROOT)} still contains {needle!r}")
+    for path, needle in MUST_CONTAIN:
+        text = path.read_text(encoding="utf-8")
+        if needle not in text:
+            failures.append(f"{path.relative_to(ROOT)} is missing {needle!r}")
 
     if failures:
         print("DEAD CODE GONE: FAIL")
@@ -43,7 +54,8 @@ def main() -> int:
             print("  " + item)
         return 1
     print("DEAD CODE GONE: PASS")
-    print("  unused installer sources, pirate art, old verifier, ManualBackup, and extra preview states stay deleted")
+    print("  unused installer sources, pirate art, old verifier, ManualBackup, extra preview states,")
+    print("  and the extra RAS Quote helper stay deleted; RAS names use QuoteArgument")
     return 0
 
 

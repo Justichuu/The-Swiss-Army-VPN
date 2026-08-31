@@ -986,7 +986,7 @@ namespace SwissArmyVpn
             ProcessStartInfo startInfo = new ProcessStartInfo
             {
                 FileName = Path.Combine(Environment.SystemDirectory, "rasdial.exe"),
-                Arguments = Quote(name),
+                Arguments = PrivateUpdateManager.QuoteArgument(name),
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 WindowStyle = ProcessWindowStyle.Hidden,
@@ -1049,7 +1049,7 @@ namespace SwissArmyVpn
             Process.Start(new ProcessStartInfo
             {
                 FileName = Path.Combine(Environment.SystemDirectory, "rasphone.exe"),
-                Arguments = "-d " + Quote(name),
+                Arguments = "-d " + PrivateUpdateManager.QuoteArgument(name),
                 UseShellExecute = true
             });
         }
@@ -1150,11 +1150,6 @@ namespace SwissArmyVpn
             return Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
                 "Microsoft", "Network", "Connections", "Pbk", "rasphone.pbk");
-        }
-
-        private static string Quote(string value)
-        {
-            return "\"" + value.Replace("\"", "\\\"") + "\"";
         }
 
         private static string BuildConnectFailureMessage(
