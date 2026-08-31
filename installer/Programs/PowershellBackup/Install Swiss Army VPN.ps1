@@ -13,7 +13,7 @@ $ruleGroup = 'Swiss Army VPN Kill Switch'
 $publisher = 'Justichuu'
 # The project handle changed because I got bored; accept the old publisher only while upgrading.
 $legacyPublisher = 'Jaye'
-$installVersion = '1.5.0.0'
+$installVersion = '1.5.1.0'
 $installParent = $null
 $installDir = $null
 $validatedInstallTarget = $null
@@ -476,6 +476,43 @@ function Test-SupportedPublisher([string]$Value) {
     return [string]::Equals($Value, $publisher, [StringComparison]::Ordinal) -or
         [string]::Equals($Value, $legacyPublisher, [StringComparison]::Ordinal)
 }
+
+# --- managed-server-address-begin ---
+function Test-ManagedServerAddress {
+    param(
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]$Value
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Value)) { return $false }
+    $normalized = $Value.Trim().ToLowerInvariant()
+    if ($normalized.Length -gt 253) { return $false }
+
+    $parsed = [Net.IPAddress]::None
+    if ($normalized -match '^\d{1,3}(?:\.\d{1,3}){3}$' -and
+        [Net.IPAddress]::TryParse($normalized, [ref]$parsed)) {
+        if ($parsed.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork) { return $false }
+        $bytes = $parsed.GetAddressBytes()
+        if ($bytes[0] -eq 0 -or $bytes[0] -eq 127) { return $false }
+        if ($bytes[0] -eq 169 -and $bytes[1] -eq 254) { return $false }
+        if ($bytes[0] -ge 224) { return $false }
+        return $true
+    }
+
+    if ($normalized -match '[:/\\ @\$;`|&<>''"()\[\]{}#?%!,~]') { return $false }
+    if ($normalized.StartsWith('.') -or $normalized.EndsWith('.') -or $normalized.Contains('..')) { return $false }
+    if ($normalized -notmatch '^[a-z0-9._-]+$') { return $false }
+    $labels = $normalized.Split('.')
+    if ($labels.Count -lt 2) { return $false }
+    foreach ($label in $labels) {
+        if ($label -notmatch '^(?:[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?|xn--[a-z0-9-]{1,59})$') {
+            return $false
+        }
+    }
+    return $true
+}
+# --- managed-server-address-end ---
 
 function Assert-ValidatedServerPool {
     $servers = @(
@@ -1077,7 +1114,7 @@ function Get-ValidatedManagedUpgradeContext {
         -not [string]::Equals([string]$state.ProfileName, $vpnName, [StringComparison]::Ordinal) -or
         -not [string]::Equals([string]$state.FirewallRuleGroup, $ruleGroup, [StringComparison]::Ordinal) -or
         -not [string]::Equals([string]$state.CertificateThumbprint, $certThumbprint, [StringComparison]::OrdinalIgnoreCase) -or
-        [string]$state.ServerAddress -cnotmatch '^ch[0-9]+\.nordvpn\.com$') {
+        -not (Test-ManagedServerAddress -Value ([string]$state.ServerAddress))) {
         throw 'The existing installation record does not match this package. Nothing was changed.'
     }
     if (-not [string]::Equals([string]$marker.ProductName, $vpnName, [StringComparison]::Ordinal) -or
@@ -1146,7 +1183,7 @@ function Get-ValidatedManagedUpgradeContext {
                 $replacedProfile.PSObject.Properties.Name -notcontains 'ServerAddress' -or
                 @('Current user', 'All users') -cnotcontains [string]$replacedProfile.Scope -or
                 [string]::IsNullOrWhiteSpace([string]$replacedProfile.Name) -or
-                [string]$replacedProfile.ServerAddress -notmatch '(?i)^ch[0-9]+\.nordvpn\.com$') {
+                -not (Test-ManagedServerAddress -Value ([string]$replacedProfile.ServerAddress))) {
                 throw 'The existing replaced-profile record is invalid. Nothing was changed.'
             }
             $replacedProfiles += [ordered]@{
@@ -1540,11 +1577,9 @@ try {
         catch {
             throw 'The existing installation version record is damaged. Nothing was changed.'
         }
-        # 1.5.0.0 is the first Swiss Army VPN release, so there is no earlier version of this
-        # product to upgrade from. The list stays empty until 1.5.0.0 has actually shipped; the
-        # next release adds it. Switzerland VPN installs are a different product and are rejected
-        # earlier, by the ProductName check on the ownership marker.
-        if (@() -cnotcontains $recordedVersion) {
+        # Switzerland VPN installs are a different product and are rejected earlier, by the
+        # ProductName check on the ownership marker.
+        if (@('1.5.0.0') -cnotcontains $recordedVersion) {
             throw "The installed version $recordedVersion cannot be upgraded by this package. Nothing was changed."
         }
         $managedUpgradeContext = Get-ValidatedManagedUpgradeContext `

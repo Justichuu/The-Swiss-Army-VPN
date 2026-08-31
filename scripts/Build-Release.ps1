@@ -4,7 +4,7 @@ param(
     # Four parts on purpose. The installer rejects same-version replacement, so a single fix can
     # need several packages; the fourth segment absorbs those without burning patch numbers.
     [ValidatePattern('^\d+\.\d+\.\d+\.\d+$')]
-    [string]$Version = '1.5.0.0',
+    [string]$Version = '1.5.1.0',
 
     [string]$OutputDirectory = ''
 )
@@ -119,6 +119,13 @@ if ($null -eq $python) {
 & $python.Source $deadCodeTest
 if ($LASTEXITCODE -ne 0) {
     throw "Dead-code witness failed with exit code $LASTEXITCODE."
+}
+
+$hostnameTest = Join-Path $repositoryRoot 'tests\Test-ManagedServerAddress.ps1'
+Assert-FileExists $hostnameTest
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $hostnameTest
+if ($LASTEXITCODE -ne 0) {
+    throw "Managed server address validation failed with exit code $LASTEXITCODE."
 }
 
 $escapedVersion = [regex]::Escape($Version)
