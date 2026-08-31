@@ -6126,8 +6126,6 @@ namespace SwissArmyVpn
                 case "connecting": return new WidgetState { PreviewDisplayState = WidgetDisplayState.Connecting };
                 case "protected": return new WidgetState { Connected = true, KillSwitchActive = true };
                 case "working": return CreateWorkingPreview(24, 84.6, 18.2);
-                case "working2": return CreateWorkingPreview(22, 86.1, 17.9);
-                case "working3": return CreateWorkingPreview(25, 83.8, 18.4);
                 case "unprotected": return new WidgetState { Connected = true };
                 case "blocked": return new WidgetState { KillSwitchActive = true };
                 case "incomplete": return new WidgetState { KillSwitchIncomplete = true };
@@ -6137,7 +6135,6 @@ namespace SwissArmyVpn
                     ManagedRulesPresent = true,
                     KillSwitchIncomplete = true
                 };
-                case "firewalloff-empty": return new WidgetState { FirewallProtectionOff = true };
                 case "error": return new WidgetState { Error = "Windows could not read the VPN or firewall status." };
                 default: throw new ArgumentException("Unknown preview state: " + name);
             }

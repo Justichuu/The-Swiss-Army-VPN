@@ -25,7 +25,6 @@ $programsDir = Split-Path -Parent $PSScriptRoot
 $packageRoot = Split-Path -Parent $programsDir
 $payloadDir = Join-Path $programsDir 'Executables'
 $powershellBackupDir = $PSScriptRoot
-$manualBackupDir = Join-Path $powershellBackupDir 'ManualBackup'
 $serverFile = Join-Path $packageRoot 'VPN Server.txt'
 $serverPoolFile = Join-Path $packageRoot 'VPN Servers.txt'
 $checksumFile = Join-Path $programsDir 'Package Checksums.txt'
@@ -394,13 +393,6 @@ Download and extract "Swiss Army VPN Distribution ${installVersion}.zip", then r
         $path = Join-Path $powershellBackupDir $name
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
             throw "The package is incomplete. Missing: Programs\PowershellBackup\$name"
-        }
-    }
-
-    foreach ($name in @('Swiss Army VPN.ps1', 'Swiss Army VPN ON.ps1', 'Swiss Army VPN OFF.ps1', 'VPN Profile.txt')) {
-        $path = Join-Path $manualBackupDir $name
-        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-            throw "The package is incomplete. Missing: Programs\PowershellBackup\ManualBackup\$name"
         }
     }
 

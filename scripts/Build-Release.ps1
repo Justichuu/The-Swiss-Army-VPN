@@ -110,6 +110,17 @@ foreach ($requiredFile in @(
     Assert-FileExists $requiredFile
 }
 
+$deadCodeTest = Join-Path $repositoryRoot 'tests\Test-DeadCodeGone.py'
+Assert-FileExists $deadCodeTest
+$python = Get-Command python, python3 -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($null -eq $python) {
+    throw 'Python is required to witness that deleted unused code stays gone.'
+}
+& $python.Source $deadCodeTest
+if ($LASTEXITCODE -ne 0) {
+    throw "Dead-code witness failed with exit code $LASTEXITCODE."
+}
+
 $escapedVersion = [regex]::Escape($Version)
 $expectedAssemblyVersion = $Version
 $sourceText = Get-Content -LiteralPath $sourceCode -Raw

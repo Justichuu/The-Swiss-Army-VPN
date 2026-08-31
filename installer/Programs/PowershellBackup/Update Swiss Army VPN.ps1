@@ -78,10 +78,6 @@ $allowedPackageEntries = @(
     'Programs\PowershellBackup\Switch Swiss Army VPN Server.ps1'
     'Programs\PowershellBackup\Uninstall Swiss Army VPN.ps1'
     'Programs\PowershellBackup\Update Swiss Army VPN.ps1'
-    'Programs\PowershellBackup\ManualBackup\Swiss Army VPN OFF.ps1'
-    'Programs\PowershellBackup\ManualBackup\Swiss Army VPN ON.ps1'
-    'Programs\PowershellBackup\ManualBackup\Swiss Army VPN.ps1'
-    'Programs\PowershellBackup\ManualBackup\VPN Profile.txt'
 )
 
 function Get-ExpectedFileVersion([string]$Version) {
