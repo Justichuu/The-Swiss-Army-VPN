@@ -42,7 +42,11 @@ namespace SwissArmyVpn
         internal const string DefaultServer = "ch221.nordvpn.com";
         internal const string CurrentVersion = "1.5.0.0";
         internal const string GitHubRepository = "Justichuu/The-Swiss-Army-VPN";
+        internal const string GitHubProfileUrl = "https://github.com/Justichuu";
         internal const string RepositoryUrl = "https://github.com/Justichuu/The-Swiss-Army-VPN";
+        internal const string GitHubIssuesUrl = "https://github.com/Justichuu/The-Swiss-Army-VPN/issues";
+        internal const string GitHubReleasesUrl = "https://github.com/Justichuu/The-Swiss-Army-VPN/releases";
+        internal const string GitHubSecurityUrl = "https://github.com/Justichuu/The-Swiss-Army-VPN/security/advisories";
         internal const string UpdateScriptName = "Update Swiss Army VPN.ps1";
         internal const string ServerSwitcherScriptName = "Switch Swiss Army VPN Server.ps1";
         internal const string RuleDescriptionPrefix =
@@ -2443,6 +2447,61 @@ namespace SwissArmyVpn
         }
     }
 
+    /// <summary>
+    /// Tiny GitHub mark. Painted, not a file, so the install layout stays the same.
+    /// Clicking it opens Justichuu's profile.
+    /// </summary>
+    internal sealed class GitHubMark : Control
+    {
+        internal GitHubMark()
+        {
+            SetStyle(
+                ControlStyles.AllPaintingInWmPaint |
+                ControlStyles.UserPaint |
+                ControlStyles.OptimizedDoubleBuffer |
+                ControlStyles.SupportsTransparentBackColor |
+                ControlStyles.ResizeRedraw,
+                true);
+            BackColor = Color.Transparent;
+            Cursor = Cursors.Hand;
+            TabStop = false;
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            Graphics graphics = e.Graphics;
+            graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+
+            int size = Math.Max(8, Math.Min(Width, Height) - 1);
+            float unit = size / 16f;
+            float left = (Width - size) / 2f;
+            float top = (Height - size) / 2f;
+
+            using (SolidBrush ink = new SolidBrush(ForeColor))
+            {
+                // Head
+                graphics.FillEllipse(ink, left + (3 * unit), top + (4 * unit), 10 * unit, 10 * unit);
+                // Ears
+                PointF[] leftEar =
+                {
+                    new PointF(left + (3.2f * unit), top + (7.2f * unit)),
+                    new PointF(left + (4.6f * unit), top + (2.2f * unit)),
+                    new PointF(left + (7.4f * unit), top + (5.0f * unit))
+                };
+                PointF[] rightEar =
+                {
+                    new PointF(left + (12.8f * unit), top + (7.2f * unit)),
+                    new PointF(left + (11.4f * unit), top + (2.2f * unit)),
+                    new PointF(left + (8.6f * unit), top + (5.0f * unit))
+                };
+                graphics.FillPolygon(ink, leftEar);
+                graphics.FillPolygon(ink, rightEar);
+            }
+        }
+    }
+
     /// <summary>What the eye is saying about whether traffic is observable.</summary>
     internal enum EyeVerdict
     {
@@ -2784,7 +2843,8 @@ namespace SwissArmyVpn
             internal readonly Rectangle Leak = new Rectangle(33, 485, 352, 19);
             internal readonly Rectangle Version = new Rectangle(33, 506, 48, 18);
             internal readonly Rectangle Update = new Rectangle(88, 506, 114, 18);
-            internal readonly Rectangle Footer = new Rectangle(216, 506, 169, 18);
+            internal readonly Rectangle GitHubMark = new Rectangle(216, 507, 16, 16);
+            internal readonly Rectangle GitHubName = new Rectangle(236, 506, 149, 18);
         }
 
         private sealed class VpnActionRequest
@@ -3179,18 +3239,32 @@ namespace SwissArmyVpn
                 leakLabel,
                 "Direct no-proxy IP check via ipify. This app saves no IP history; it does not test DNS or browser WebRTC.");
 
-            Label footer = new Label
+            GitHubMark githubMark = new GitHubMark
             {
-                Text = "Justichuu's Swiss Army VPN",
-                ForeColor = Color.FromArgb(184, 190, 201),
+                Bounds = Grid.GitHubMark,
+                ForeColor = Color.FromArgb(184, 190, 201)
+            };
+            githubMark.Click += delegate { OpenGitHub(AppConfig.GitHubProfileUrl, "GitHub profile"); };
+            Controls.Add(githubMark);
+            RegisterToolTip(githubMark, "Justichuu on GitHub.");
+
+            LinkLabel githubName = new LinkLabel
+            {
+                Text = "Justichuu",
+                LinkColor = Color.FromArgb(184, 190, 201),
+                ActiveLinkColor = Color.White,
+                VisitedLinkColor = Color.FromArgb(184, 190, 201),
+                DisabledLinkColor = Color.FromArgb(132, 139, 151),
                 BackColor = Color.Transparent,
                 Font = new Font("Segoe UI", 7.5f),
-                TextAlign = ContentAlignment.MiddleRight,
                 AutoSize = false,
-                Bounds = Grid.Footer
+                TextAlign = ContentAlignment.MiddleLeft,
+                LinkBehavior = LinkBehavior.HoverUnderline,
+                Bounds = Grid.GitHubName
             };
-            Controls.Add(footer);
-            RegisterToolTip(footer, "Application name.");
+            githubName.LinkClicked += delegate { OpenGitHub(AppConfig.GitHubProfileUrl, "GitHub profile"); };
+            Controls.Add(githubName);
+            RegisterToolTip(githubName, "Open Justichuu on GitHub.");
 
             LinkLabel versionLink = new LinkLabel
             {
@@ -3206,9 +3280,9 @@ namespace SwissArmyVpn
                 LinkBehavior = LinkBehavior.HoverUnderline,
                 Bounds = Grid.Version
             };
-            versionLink.LinkClicked += delegate { OpenRepository(); };
+            versionLink.LinkClicked += delegate { OpenGitHub(AppConfig.RepositoryUrl, "repository"); };
             Controls.Add(versionLink);
-            RegisterToolTip(versionLink, "Open this project on GitHub.");
+            RegisterToolTip(versionLink, "Open this repository on GitHub.");
 
             updateLink = new LinkLabel
             {
@@ -3266,7 +3340,30 @@ namespace SwissArmyVpn
             trayMenu.Items.Add(traySignInItem);
             trayMenu.Items.Add(trayClearCredentialsItem);
             trayMenu.Items.Add(new ToolStripSeparator());
-            trayMenu.Items.Add(trayUpdateItem);
+            ToolStripMenuItem trayGitHub = new ToolStripMenuItem("GitHub");
+            trayGitHub.DropDownItems.Add(new ToolStripMenuItem("Justichuu", null, delegate { OpenGitHub(AppConfig.GitHubProfileUrl, "GitHub profile"); })
+            {
+                ToolTipText = "Open Justichuu's GitHub profile."
+            });
+            trayGitHub.DropDownItems.Add(new ToolStripMenuItem("This repository", null, delegate { OpenGitHub(AppConfig.RepositoryUrl, "repository"); })
+            {
+                ToolTipText = "Open the Swiss Army VPN repository."
+            });
+            trayGitHub.DropDownItems.Add(new ToolStripMenuItem("Issues", null, delegate { OpenGitHub(AppConfig.GitHubIssuesUrl, "issues"); })
+            {
+                ToolTipText = "Open GitHub issues."
+            });
+            trayGitHub.DropDownItems.Add(new ToolStripMenuItem("Releases", null, delegate { OpenGitHub(AppConfig.GitHubReleasesUrl, "releases"); })
+            {
+                ToolTipText = "Open GitHub releases."
+            });
+            trayGitHub.DropDownItems.Add(new ToolStripMenuItem("Security advisories", null, delegate { OpenGitHub(AppConfig.GitHubSecurityUrl, "security advisories"); })
+            {
+                ToolTipText = "Open GitHub security advisories. Report private problems there."
+            });
+            trayGitHub.DropDownItems.Add(new ToolStripSeparator());
+            trayGitHub.DropDownItems.Add(trayUpdateItem);
+            trayMenu.Items.Add(trayGitHub);
             trayMenu.Items.Add(new ToolStripSeparator());
             ToolStripMenuItem trayExitItem = new ToolStripMenuItem("Exit", null, delegate { Close(); })
             {
@@ -3349,16 +3446,16 @@ namespace SwissArmyVpn
             toolTips.SetToolTip(control, text);
         }
 
-        private void OpenRepository()
+        private static void OpenGitHub(string url, string what)
         {
             try
             {
-                Process.Start(new ProcessStartInfo(AppConfig.RepositoryUrl) { UseShellExecute = true });
+                Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
             }
             catch (Exception ex)
             {
                 MessageBox.Show(
-                    "Could not open the GitHub repository.\r\n\r\n" + ex.Message,
+                    "Could not open the " + what + ".\r\n\r\n" + ex.Message,
                     "Swiss Army VPN",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
