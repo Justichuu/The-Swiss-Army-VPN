@@ -8,9 +8,7 @@ The best code is the kind you don’t need to write. Unused screenshot states, a
 
 Captions: [`docs/media/vpn-working-demo/CAPTIONS.md`](docs/media/vpn-working-demo/CAPTIONS.md). Green eye shut (`#2CC478`) means this machine is hidden. Red eye open (`#E24448`) means traffic can still be watched. Left is go. Right is stop.
 
-The film is a screen recording of the product. It is not a test of anyone’s body.
-
-Until Windows CI replaces it, the GIF at that path may still show the older Switzerland VPN window. The remaining-state stills come from the live executable’s `--preview-state` renderer, not from a second UI.
+The film is the live widget. Each still is `Swiss Army VPN.exe --preview-state`, not a second UI. It is a screen recording of the product, not a test of anyone’s body.
 
 ## Remaining states
 

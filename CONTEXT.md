@@ -23,7 +23,7 @@ The best code is the kind you don’t need to write. Unused screenshot states, a
 
 - Live sitting states: `disconnected`, `connecting`, `protected`, `working`, `unprotected`, `blocked`, `incomplete`, `firewalloff`, `error`.
 - Deleted extras stay gone: `working2`, `working3`, `firewalloff-empty`.
-- Windows CI stills: `scripts/Render-WidgetStatePreviews.ps1` calls the built `Swiss Army VPN.exe`. Captions live in `docs/media/vpn-working-demo/CAPTIONS.md`.
+- Windows CI stills: `scripts/Render-WidgetStatePreviews.ps1` calls the built `Swiss Army VPN.exe`. The README GIF is those stills. Captions live in `docs/media/vpn-working-demo/CAPTIONS.md`.
 - Eye: green shut `#2CC478` means hidden; red open `#E24448` means watched.
 
 ### v1.4.5.0 - IPv6 transition tunnel guidance (2026-08-11)

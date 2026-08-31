@@ -50,7 +50,7 @@ python3 .\scripts\assemble_widget_state_gif.py --input-directory .\artifacts\wid
 ```text
 Title: Swiss Army VPN remaining states
 Date: 2026-08-31
-Machine: Windows CI preview renderer, then captioned stills
+Machine: Windows CI --preview-state renderer, then captioned stills
 Build: 1.5.0.0 widget from this branch
 Automated tests: Test-DeadCodeGone.py
 Caption language: English
