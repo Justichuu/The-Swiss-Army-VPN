@@ -1,5 +1,29 @@
 # Justichuu's Swiss Army VPN
 
+## Read order
+
+```
+README.md > CONTEXT.md > ROADMAP.md > SECURITY.md
+```
+
+Read left to right. Do not start in the middle.
+
+**This chain is the interface.** An agent parses in order, so the order carries
+meaning the same way the words do. Two rules keep it usable:
+
+1. **Update on every read.** If you read this file and any part of it is now
+   wrong — a path, a version, a link in the chain above — correct it before
+   doing anything else. A stale chain silently misroutes every agent that comes
+   after you, and the cost compounds.
+2. **One in, one out.** The chain is an engine: exactly one entry point, one
+   exit, and whatever parts it needs between them. Reorder, add or remove the
+   internals freely — that is the variable part. Never add a second entry
+   point. Work that must run alongside this is a *separate* engine fed from
+   this one's output; engines may be multitasked in parallel, but a single
+   engine with two mouths has no defined order, and order is the whole point.
+
+---
+
 A lightweight Windows tray widget for a Swiss Army VPN IKEv2 VPN, backed by Windows' built-in VPN client.
 
 This project is a learning experience more than anything: an experiment in mixing vibe coding with real technical knowledge. It has already come a long way, and the goal is to keep learning how to build apps that work reliably, scale cleanly, and reach users with no known bugs.
