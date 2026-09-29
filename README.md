@@ -3,7 +3,7 @@
 ## Read order
 
 ```
-README.md > CONTEXT.md > ROADMAP.md > SECURITY.md
+README.md > CONTEXT.md > ROADMAP.png > SECURITY.md
 ```
 
 Read left to right. Do not start in the middle.
