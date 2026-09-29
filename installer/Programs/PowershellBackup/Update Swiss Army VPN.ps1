@@ -78,10 +78,6 @@ $allowedPackageEntries = @(
     'Programs\PowershellBackup\Switch Swiss Army VPN Server.ps1'
     'Programs\PowershellBackup\Uninstall Swiss Army VPN.ps1'
     'Programs\PowershellBackup\Update Swiss Army VPN.ps1'
-    'Programs\PowershellBackup\ManualBackup\Swiss Army VPN OFF.ps1'
-    'Programs\PowershellBackup\ManualBackup\Swiss Army VPN ON.ps1'
-    'Programs\PowershellBackup\ManualBackup\Swiss Army VPN.ps1'
-    'Programs\PowershellBackup\ManualBackup\VPN Profile.txt'
 )
 
 function Get-ExpectedFileVersion([string]$Version) {
@@ -101,6 +97,43 @@ function Test-SupportedPublisher([string]$Value) {
     return [string]::Equals($Value, $publisher, [StringComparison]::Ordinal) -or
         [string]::Equals($Value, $legacyPublisher, [StringComparison]::Ordinal)
 }
+
+# --- managed-server-address-begin ---
+function Test-ManagedServerAddress {
+    param(
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]$Value
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Value)) { return $false }
+    $normalized = $Value.Trim().ToLowerInvariant()
+    if ($normalized.Length -gt 253) { return $false }
+
+    $parsed = [Net.IPAddress]::None
+    if ($normalized -match '^\d{1,3}(?:\.\d{1,3}){3}$' -and
+        [Net.IPAddress]::TryParse($normalized, [ref]$parsed)) {
+        if ($parsed.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork) { return $false }
+        $bytes = $parsed.GetAddressBytes()
+        if ($bytes[0] -eq 0 -or $bytes[0] -eq 127) { return $false }
+        if ($bytes[0] -eq 169 -and $bytes[1] -eq 254) { return $false }
+        if ($bytes[0] -ge 224) { return $false }
+        return $true
+    }
+
+    if ($normalized -match '[:/\\ @\$;`|&<>''"()\[\]{}#?%!,~]') { return $false }
+    if ($normalized.StartsWith('.') -or $normalized.EndsWith('.') -or $normalized.Contains('..')) { return $false }
+    if ($normalized -notmatch '^[a-z0-9._-]+$') { return $false }
+    $labels = $normalized.Split('.')
+    if ($labels.Count -lt 2) { return $false }
+    foreach ($label in $labels) {
+        if ($label -notmatch '^(?:[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?|xn--[a-z0-9-]{1,59})$') {
+            return $false
+        }
+    }
+    return $true
+}
+# --- managed-server-address-end ---
 
 function Get-ExactFullPath {
     param([Parameter(Mandatory)][string]$Path)
@@ -479,7 +512,8 @@ function Get-ValidatedInstallContext {
     }
     if (-not [string]::Equals([string]$state.ProductName, $productName, [StringComparison]::Ordinal) -or
         -not [guid]::TryParse([string]$state.InstallId, [ref]([guid]::Empty)) -or
-        [string]$state.Version -notmatch '^\d+\.\d+\.\d+(\.\d+)?$') {
+        [string]$state.Version -notmatch '^\d+\.\d+\.\d+(\.\d+)?$' -or
+        -not (Test-ManagedServerAddress -Value ([string]$state.ServerAddress))) {
         throw 'Swiss Army VPN installation ownership data is invalid.'
     }
 

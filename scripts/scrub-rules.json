@@ -1,0 +1,85 @@
+{
+  "version": "1",
+  "offline_only": true,
+  "phases": [
+    "collect",
+    "classify",
+    "redact",
+    "verify",
+    "witness",
+    "report"
+  ],
+  "secret_patterns": [
+    {
+      "id": "github-pat",
+      "kind": "secret",
+      "pattern": "gh[pousr]_[A-Za-z0-9_]{20,}"
+    },
+    {
+      "id": "github-fine-grained",
+      "kind": "secret",
+      "pattern": "github_pat_[A-Za-z0-9_]{20,}"
+    },
+    {
+      "id": "pem-private-key",
+      "kind": "secret",
+      "pattern": "-----BEGIN [A-Z ]*PRIVATE KEY-----"
+    },
+    {
+      "id": "jwt",
+      "kind": "secret",
+      "pattern": "eyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}"
+    },
+    {
+      "id": "assignment-secret",
+      "kind": "secret",
+      "pattern": "(?i)(password|passwd|pwd|secret|api[_-]?key|access[_-]?token)\\s*[:=]\\s*\\S+"
+    }
+  ],
+  "identity_patterns": [
+    {
+      "id": "windows-user-path",
+      "kind": "identity",
+      "pattern": "(?i)([A-Z]:\\\\Users\\\\)[^\\\\\\s\"]+"
+    },
+    {
+      "id": "home-path",
+      "kind": "identity",
+      "pattern": "(?i)(/home/)[^/\\s\"]+"
+    },
+    {
+      "id": "ipv4",
+      "kind": "identity",
+      "pattern": "\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b"
+    },
+    {
+      "id": "email",
+      "kind": "identity",
+      "pattern": "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}"
+    }
+  ],
+  "ai_id_patterns": [
+    {
+      "id": "ai-self",
+      "kind": "ai-id",
+      "pattern": "(?i)\\b(as an ai|i am an ai|i'm an ai|i am a language model)\\b"
+    },
+    {
+      "id": "ai-product",
+      "kind": "ai-id",
+      "pattern": "(?i)\\b(github copilot|chatgpt|openai|anthropic|claude|cursor agent|qwen)\\b"
+    }
+  ],
+  "skip_names": [
+    "scrub-rules.json",
+    "Test-StatePhaseScrubber.py",
+    "Test-StatePhaseScrubber.ps1",
+    "Scrub-SwissArmyVpnState.ps1",
+    "STATE-AND-PHASES.md"
+  ],
+  "local_witness_names": [
+    "witness.ps1",
+    "scrub-witness.ps1",
+    "Witness-Scrub.ps1"
+  ]
+}

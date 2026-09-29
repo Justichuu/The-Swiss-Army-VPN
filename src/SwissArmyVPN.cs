@@ -26,12 +26,19 @@ using System.Windows.Forms;
 [assembly: System.Reflection.AssemblyCompany("Justichuu")]
 [assembly: System.Reflection.AssemblyProduct("Swiss Army VPN")]
 [assembly: System.Reflection.AssemblyCopyright("Copyright 2026 Justichuu")]
-[assembly: System.Reflection.AssemblyVersion("1.5.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.5.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersion("1.5.0.0")]
+[assembly: System.Reflection.AssemblyVersion("1.5.1.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.5.1.0")]
+[assembly: System.Reflection.AssemblyInformationalVersion("1.5.1.0")]
 
 namespace SwissArmyVpn
 {
+    internal enum ServerSelectionMode
+    {
+        SwissNordVpn,
+        AnyNordVpn,
+        BringYourOwn
+    }
+
     internal static class AppConfig
     {
         internal const string VpnName = "Swiss Army VPN";
@@ -40,9 +47,13 @@ namespace SwissArmyVpn
         // The project handle changed because I got bored; keep the old publisher only for safe upgrades.
         internal const string LegacyPublisher = "Jaye";
         internal const string DefaultServer = "ch221.nordvpn.com";
-        internal const string CurrentVersion = "1.5.0.0";
+        internal const string CurrentVersion = "1.5.1.0";
         internal const string GitHubRepository = "Justichuu/The-Swiss-Army-VPN";
+        internal const string GitHubProfileUrl = "https://github.com/Justichuu";
         internal const string RepositoryUrl = "https://github.com/Justichuu/The-Swiss-Army-VPN";
+        internal const string GitHubIssuesUrl = "https://github.com/Justichuu/The-Swiss-Army-VPN/issues";
+        internal const string GitHubReleasesUrl = "https://github.com/Justichuu/The-Swiss-Army-VPN/releases";
+        internal const string GitHubSecurityUrl = "https://github.com/Justichuu/The-Swiss-Army-VPN/security/advisories";
         internal const string UpdateScriptName = "Update Swiss Army VPN.ps1";
         internal const string ServerSwitcherScriptName = "Switch Swiss Army VPN Server.ps1";
         internal const string RuleDescriptionPrefix =
@@ -84,17 +95,40 @@ namespace SwissArmyVpn
 
         internal static bool AllowAnyNordVpnServer
         {
+            get { return ServerMode == ServerSelectionMode.AnyNordVpn; }
+        }
+
+        /// <summary>
+        /// Swiss-only, any official NordVPN country, or bring-your-own IKEv2 endpoint.
+        /// Bring-your-own wins if both registry values were ever set.
+        /// </summary>
+        internal static ServerSelectionMode ServerMode
+        {
             get
             {
                 using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"Software\Justichuu\Swiss Army VPN"))
-                    return key != null && Convert.ToInt32(key.GetValue("AllowAnyNordVpnServer", 0), CultureInfo.InvariantCulture) == 1;
+                {
+                    if (key == null) return ServerSelectionMode.SwissNordVpn;
+                    if (Convert.ToInt32(key.GetValue("BringYourOwnConnect", 0), CultureInfo.InvariantCulture) == 1)
+                        return ServerSelectionMode.BringYourOwn;
+                    if (Convert.ToInt32(key.GetValue("AllowAnyNordVpnServer", 0), CultureInfo.InvariantCulture) == 1)
+                        return ServerSelectionMode.AnyNordVpn;
+                    return ServerSelectionMode.SwissNordVpn;
+                }
             }
             set
             {
                 using (RegistryKey key = Registry.CurrentUser.CreateSubKey(@"Software\Justichuu\Swiss Army VPN"))
                 {
                     if (key == null) throw new InvalidOperationException("Windows could not save the server selection mode.");
-                    key.SetValue("AllowAnyNordVpnServer", value ? 1 : 0, RegistryValueKind.DWord);
+                    key.SetValue(
+                        "BringYourOwnConnect",
+                        value == ServerSelectionMode.BringYourOwn ? 1 : 0,
+                        RegistryValueKind.DWord);
+                    key.SetValue(
+                        "AllowAnyNordVpnServer",
+                        value == ServerSelectionMode.AnyNordVpn ? 1 : 0,
+                        RegistryValueKind.DWord);
                 }
             }
         }
@@ -986,7 +1020,7 @@ namespace SwissArmyVpn
             ProcessStartInfo startInfo = new ProcessStartInfo
             {
                 FileName = Path.Combine(Environment.SystemDirectory, "rasdial.exe"),
-                Arguments = Quote(name),
+                Arguments = PrivateUpdateManager.QuoteArgument(name),
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 WindowStyle = ProcessWindowStyle.Hidden,
@@ -1049,7 +1083,7 @@ namespace SwissArmyVpn
             Process.Start(new ProcessStartInfo
             {
                 FileName = Path.Combine(Environment.SystemDirectory, "rasphone.exe"),
-                Arguments = "-d " + Quote(name),
+                Arguments = "-d " + PrivateUpdateManager.QuoteArgument(name),
                 UseShellExecute = true
             });
         }
@@ -1152,11 +1186,6 @@ namespace SwissArmyVpn
                 "Microsoft", "Network", "Connections", "Pbk", "rasphone.pbk");
         }
 
-        private static string Quote(string value)
-        {
-            return "\"" + value.Replace("\"", "\\\"") + "\"";
-        }
-
         private static string BuildConnectFailureMessage(
             int exitCode,
             string output,
@@ -1177,13 +1206,13 @@ namespace SwissArmyVpn
                 case 703:
                     return
                         "Swiss Army VPN does not have a usable saved sign-in.\r\n\r\n" +
-                        "Choose SET UP SIGN-IN, enter the NordVPN manual service username and password, " +
-                        "and save them. Then try " + actionName + " again. Ask Justichuu if you need the credentials." + recovery;
+                        "Choose SET UP SIGN-IN, enter the username and password for this VPN server, " +
+                        "and save them. Then try " + actionName + " again." + recovery;
                 case 691:
                     return
                         "Windows rejected the saved VPN username or password.\r\n\r\n" +
                         "Choose CLEAR SAVED CREDENTIALS, then SET UP SIGN-IN and enter the correct " +
-                        "NordVPN manual service credentials." + recovery;
+                        "credentials for this VPN server." + recovery;
                 case 623:
                     return
                         "The Swiss Army VPN profile is missing. Reinstall Swiss Army VPN to restore it." + recovery;
@@ -1209,8 +1238,9 @@ namespace SwissArmyVpn
                         "and try again. Ask Justichuu if it still fails." + recovery;
                 case 13801:
                     return
-                        "Windows could not verify the VPN server's security credentials. Reinstall Swiss Army VPN " +
-                        "to restore its certificate and profile settings, then try again." + recovery;
+                        "Windows could not verify the VPN server's security credentials. For a NordVPN server, " +
+                        "reinstall Swiss Army VPN to restore its certificate. For bring-your-own, install that " +
+                        "provider's trusted root or check the hostname, then try again." + recovery;
             }
 
             string message = code > 0
@@ -1626,6 +1656,12 @@ namespace SwissArmyVpn
         private static readonly Regex SwissNordVpnHostnamePattern = new Regex(
             @"^ch[0-9]+\.nordvpn\.com$",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        private static readonly Regex SafeDnsLabelPattern = new Regex(
+            @"^(?:[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?|xn--[a-z0-9-]{1,59})$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        private static readonly Regex UnsafeEndpointCharacterPattern = new Regex(
+            @"[:/\\ @\$;`|&<>'""()\[\]{}#?%!,~]",
+            RegexOptions.CultureInvariant);
 
         /// <summary>Returns whether a hostname is an official numbered NordVPN endpoint.</summary>
         internal static bool IsNordVpnHostname(string host)
@@ -1640,19 +1676,99 @@ namespace SwissArmyVpn
         }
 
         /// <summary>
-        /// Normalizes and validates a user-selected NordVPN hostname without performing network I/O.
-        /// Swiss-only mode rejects non-Swiss prefixes before any privileged change begins.
+        /// Returns whether a value is a safe IKEv2 endpoint: official NordVPN host, public or
+        /// private IPv4, or a strict ASCII FQDN. Rejects loopback, link-local, multicast, URLs,
+        /// ports, and shell metacharacters before any privileged change begins.
         /// </summary>
+        internal static bool IsSafeVpnEndpoint(string host)
+        {
+            string normalized;
+            return TryNormalizeSafeVpnEndpoint(host, out normalized);
+        }
+
+        internal static bool TryNormalizeSafeVpnEndpoint(string host, out string normalized)
+        {
+            normalized = null;
+            if (string.IsNullOrWhiteSpace(host)) return false;
+
+            string candidate = host.Trim().ToLowerInvariant();
+            if (candidate.Length == 0 || candidate.Length > 253) return false;
+
+            IPAddress parsed;
+            if (Regex.IsMatch(candidate, @"^\d{1,3}(?:\.\d{1,3}){3}$") &&
+                IPAddress.TryParse(candidate, out parsed))
+            {
+                if (parsed.AddressFamily != AddressFamily.InterNetwork || !IsAllowedVpnIpv4(parsed))
+                    return false;
+                normalized = parsed.ToString();
+                return true;
+            }
+
+            if (UnsafeEndpointCharacterPattern.IsMatch(candidate) ||
+                candidate.IndexOf("..", StringComparison.Ordinal) >= 0 ||
+                candidate[0] == '.' ||
+                candidate[candidate.Length - 1] == '.' ||
+                !candidate.Contains("."))
+                return false;
+
+            string[] labels = candidate.Split('.');
+            if (labels.Length < 2) return false;
+            for (int i = 0; i < labels.Length; i++)
+            {
+                if (!SafeDnsLabelPattern.IsMatch(labels[i])) return false;
+            }
+
+            normalized = candidate;
+            return true;
+        }
+
+        /// <summary>
+        /// Normalizes and validates a user-selected server without performing network I/O.
+        /// Swiss and NordVPN modes reject other providers before any privileged change begins.
+        /// Bring-your-own accepts any safe IKEv2 hostname or IPv4 address.
+        /// </summary>
+        internal static string NormalizeServerHostname(string host, ServerSelectionMode mode)
+        {
+            string normalized;
+            if (!TryNormalizeSafeVpnEndpoint(host, out normalized))
+                throw new InvalidOperationException(InvalidEndpointMessage(mode));
+
+            if (mode == ServerSelectionMode.BringYourOwn)
+                return normalized;
+            if (!IsNordVpnHostname(normalized))
+                throw new InvalidOperationException(InvalidEndpointMessage(mode));
+            if (mode == ServerSelectionMode.SwissNordVpn && !IsSwissNordVpnHostname(normalized))
+                throw new InvalidOperationException(
+                    "Swiss-only mode accepts ch<number>.nordvpn.com servers. Choose Any NordVPN or Bring your own.");
+            return normalized;
+        }
+
+        /// <summary>
+        /// Normalizes a hostname that is already stored on the machine. The saved value may be a
+        /// Swiss server, another NordVPN country, or a bring-your-own endpoint.
+        /// </summary>
+        internal static string NormalizePersistedServerHostname(string host)
+        {
+            return NormalizeServerHostname(host, ServerSelectionMode.BringYourOwn);
+        }
+
+        internal static string InvalidEndpointMessage(ServerSelectionMode mode)
+        {
+            if (mode == ServerSelectionMode.BringYourOwn)
+                return
+                    "Enter a VPN hostname or IPv4 address such as ikev2.example.com, vpn.company.local, " +
+                    "or 203.0.113.10. URLs, ports, and IPv6 literals are not accepted.";
+            if (mode == ServerSelectionMode.AnyNordVpn)
+                return "Enter an official NordVPN hostname such as ch221.nordvpn.com or us1234.nordvpn.com.";
+            return "Enter a Swiss NordVPN hostname such as ch221.nordvpn.com, or choose another server mode.";
+        }
+
+        /// <summary>Kept for callers that still pass the old Any-NordVPN checkbox flag.</summary>
         internal static string NormalizeServerHostname(string host, bool allowAnyNordVpnServer)
         {
-            string normalized = (host ?? string.Empty).Trim().ToLowerInvariant();
-            if (!IsNordVpnHostname(normalized))
-                throw new InvalidOperationException(
-                    "Enter an official NordVPN hostname such as ch221.nordvpn.com or us1234.nordvpn.com.");
-            if (!allowAnyNordVpnServer && !IsSwissNordVpnHostname(normalized))
-                throw new InvalidOperationException(
-                    "Swiss-only mode accepts ch<number>.nordvpn.com servers. Enable Any NordVPN to use another country.");
-            return normalized;
+            return NormalizeServerHostname(
+                host,
+                allowAnyNordVpnServer ? ServerSelectionMode.AnyNordVpn : ServerSelectionMode.SwissNordVpn);
         }
         /// <summary>
         /// Windows Firewall rules can only be scoped to wired, wireless, or remote-access adapters,
@@ -1746,18 +1862,25 @@ namespace SwissArmyVpn
 
         internal static IPAddress[] ResolveAndValidateServer(string host)
         {
-            string normalizedHost = NormalizeServerHostname(host, true);
+            string normalizedHost = NormalizePersistedServerHostname(host);
+
+            IPAddress literal;
+            if (IPAddress.TryParse(normalizedHost, out literal) &&
+                literal.AddressFamily == AddressFamily.InterNetwork)
+            {
+                return new[] { literal };
+            }
 
             IPAddress[] addresses;
             try
             {
                 addresses = Dns.GetHostAddresses(normalizedHost)
-                    .Where(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
-                    .Where(IsPublicIpv4)
+                    .Where(a => a.AddressFamily == AddressFamily.InterNetwork)
+                    .Where(IsAllowedVpnIpv4)
                     .Distinct()
                     .ToArray();
             }
-            catch (System.Net.Sockets.SocketException ex)
+            catch (SocketException ex)
             {
                 throw new InvalidOperationException(
                     "Windows could not look up the Swiss Army VPN server. Check that normal internet and DNS work, " +
@@ -1766,7 +1889,8 @@ namespace SwissArmyVpn
             }
 
             if (addresses.Length == 0)
-                throw new InvalidOperationException("Could not resolve " + host + " to a public IPv4 address. The kill switch was not changed.");
+                throw new InvalidOperationException(
+                    "Could not resolve " + host + " to an allowed IPv4 address. The kill switch was not changed.");
 
             return addresses;
         }
@@ -1781,10 +1905,10 @@ namespace SwissArmyVpn
             {
                 IPAddress address;
                 if (!IPAddress.TryParse(token.Trim(), out address) ||
-                    address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork ||
-                    !IsPublicIpv4(address))
+                    address.AddressFamily != AddressFamily.InterNetwork ||
+                    !IsAllowedVpnIpv4(address))
                 {
-                    throw new InvalidOperationException("The firewall helper received an invalid public IPv4 address.");
+                    throw new InvalidOperationException("The firewall helper received an invalid VPN IPv4 address.");
                 }
                 addresses.Add(address);
             }
@@ -1838,6 +1962,22 @@ namespace SwissArmyVpn
             if (b[0] == 169 && b[1] == 254) return false;
             if (b[0] == 172 && b[1] >= 16 && b[1] <= 31) return false;
             if (b[0] == 192 && b[1] == 168) return false;
+            if (b[0] >= 224) return false;
+            return true;
+        }
+
+        /// <summary>
+        /// IPv4 addresses the kill switch may pin as the VPN server. Public and RFC1918/CGNAT
+        /// addresses are allowed so bring-your-own and lab concentrators work. Loopback,
+        /// unspecified, link-local, and multicast stay rejected.
+        /// </summary>
+        internal static bool IsAllowedVpnIpv4(IPAddress address)
+        {
+            if (address == null) return false;
+            byte[] b = address.GetAddressBytes();
+            if (b.Length != 4) return false;
+            if (b[0] == 0 || b[0] == 127) return false;
+            if (b[0] == 169 && b[1] == 254) return false;
             if (b[0] >= 224) return false;
             return true;
         }
@@ -2448,6 +2588,61 @@ namespace SwissArmyVpn
         }
     }
 
+    /// <summary>
+    /// Tiny GitHub mark. Painted, not a file, so the install layout stays the same.
+    /// Clicking it opens Justichuu's profile.
+    /// </summary>
+    internal sealed class GitHubMark : Control
+    {
+        internal GitHubMark()
+        {
+            SetStyle(
+                ControlStyles.AllPaintingInWmPaint |
+                ControlStyles.UserPaint |
+                ControlStyles.OptimizedDoubleBuffer |
+                ControlStyles.SupportsTransparentBackColor |
+                ControlStyles.ResizeRedraw,
+                true);
+            BackColor = Color.Transparent;
+            Cursor = Cursors.Hand;
+            TabStop = false;
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            Graphics graphics = e.Graphics;
+            graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+
+            int size = Math.Max(8, Math.Min(Width, Height) - 1);
+            float unit = size / 16f;
+            float left = (Width - size) / 2f;
+            float top = (Height - size) / 2f;
+
+            using (SolidBrush ink = new SolidBrush(ForeColor))
+            {
+                // Head
+                graphics.FillEllipse(ink, left + (3 * unit), top + (4 * unit), 10 * unit, 10 * unit);
+                // Ears
+                PointF[] leftEar =
+                {
+                    new PointF(left + (3.2f * unit), top + (7.2f * unit)),
+                    new PointF(left + (4.6f * unit), top + (2.2f * unit)),
+                    new PointF(left + (7.4f * unit), top + (5.0f * unit))
+                };
+                PointF[] rightEar =
+                {
+                    new PointF(left + (12.8f * unit), top + (7.2f * unit)),
+                    new PointF(left + (11.4f * unit), top + (2.2f * unit)),
+                    new PointF(left + (8.6f * unit), top + (5.0f * unit))
+                };
+                graphics.FillPolygon(ink, leftEar);
+                graphics.FillPolygon(ink, rightEar);
+            }
+        }
+    }
+
     /// <summary>What the eye is saying about whether traffic is observable.</summary>
     internal enum EyeVerdict
     {
@@ -2468,7 +2663,14 @@ namespace SwissArmyVpn
         private static readonly Color UnknownColor = Color.FromArgb(128, 134, 148);
 
         private readonly Image mandala;
+        private readonly System.Windows.Forms.Timer lidTimer;
         private EyeVerdict verdict = EyeVerdict.Unknown;
+        private float lid = 1f;
+        private float lidTo = 1f;
+        private Color wash = UnknownColor;
+        private Color washTo = UnknownColor;
+        private int quietMs;
+        private bool frozen;
 
         internal EyeIndicator()
         {
@@ -2481,6 +2683,17 @@ namespace SwissArmyVpn
             BackColor = Color.Transparent;
             TabStop = false;
             mandala = LoadMandala();
+            lidTimer = new System.Windows.Forms.Timer { Interval = 32 };
+            lidTimer.Tick += StepLid;
+        }
+
+        internal void FreezeLid()
+        {
+            frozen = true;
+            lidTimer.Stop();
+            lid = lidTo = OpennessOf(verdict);
+            wash = washTo = ColorOf(verdict);
+            Invalidate();
         }
 
         internal EyeVerdict Verdict
@@ -2490,8 +2703,69 @@ namespace SwissArmyVpn
             {
                 if (verdict == value) return;
                 verdict = value;
-                Invalidate();
+                lidTo = OpennessOf(verdict);
+                washTo = ColorOf(verdict);
+                quietMs = 0;
+                if (frozen)
+                {
+                    lid = lidTo;
+                    wash = washTo;
+                    Invalidate();
+                    return;
+                }
+                lidTimer.Start();
             }
+        }
+
+        private static float OpennessOf(EyeVerdict value)
+        {
+            if (value == EyeVerdict.Hidden) return 0.06f;
+            if (value == EyeVerdict.Watched) return 1f;
+            return 0.45f;
+        }
+
+        private static Color ColorOf(EyeVerdict value)
+        {
+            if (value == EyeVerdict.Hidden) return HiddenColor;
+            if (value == EyeVerdict.Watched) return WatchedColor;
+            return UnknownColor;
+        }
+
+        private void StepLid(object sender, EventArgs e)
+        {
+            if (frozen || !Visible)
+            {
+                lidTimer.Stop();
+                return;
+            }
+
+            lid += (lidTo - lid) * 0.22f;
+            wash = Mix(wash, washTo, 0.22f);
+            bool settled = Math.Abs(lid - lidTo) < 0.02f;
+            if (settled)
+            {
+                lid = lidTo;
+                wash = washTo;
+                if (verdict != EyeVerdict.Watched)
+                {
+                    lidTimer.Stop();
+                    Invalidate();
+                    return;
+                }
+                quietMs += 32;
+                if (lid > 0.9f && quietMs > 5200) { lidTo = 0.06f; quietMs = 0; }
+                else if (lid < 0.12f) lidTo = 1f;
+            }
+            Invalidate();
+        }
+
+        private static Color Mix(Color from, Color to, float t)
+        {
+            return Color.FromArgb(
+                (int)(from.A + ((to.A - from.A) * t)),
+                (int)(from.R + ((to.R - from.R) * t)),
+                (int)(from.G + ((to.G - from.G) * t)),
+                (int)(from.B + ((to.B - from.B) * t)));
         }
 
         /// <summary>
@@ -2518,14 +2792,11 @@ namespace SwissArmyVpn
             }
         }
 
-        private Color VerdictColor
+        protected override void OnVisibleChanged(EventArgs e)
         {
-            get
-            {
-                if (verdict == EyeVerdict.Hidden) return HiddenColor;
-                if (verdict == EyeVerdict.Watched) return WatchedColor;
-                return UnknownColor;
-            }
+            base.OnVisibleChanged(e);
+            if (!Visible) lidTimer.Stop();
+            else if (!frozen && lid != lidTo) lidTimer.Start();
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -2538,18 +2809,13 @@ namespace SwissArmyVpn
             float size = Math.Min(Width, Height);
             float centreX = Width / 2f;
             float centreY = Height / 2f;
-            Color accent = VerdictColor;
+            Color accent = wash;
 
             DrawMandala(graphics, accent, size, centreX, centreY);
 
-            // Shut when traffic cannot be observed. The lid closes rather than the eye vanishing,
-            // so the two states read as the same object rather than two different icons.
-            float openness = verdict == EyeVerdict.Hidden ? 0.06f : 1f;
-            if (verdict == EyeVerdict.Unknown) openness = 0.45f;
-
             float reach = size * 0.29f;
-            float lift = reach * 0.62f * openness;
-            DrawEye(graphics, accent, centreX, centreY, reach, lift, openness);
+            float lift = reach * 0.62f * lid;
+            DrawEye(graphics, accent, centreX, centreY, reach, lift, lid);
         }
 
         private void DrawMandala(Graphics graphics, Color accent, float size, float centreX, float centreY)
@@ -2671,7 +2937,16 @@ namespace SwissArmyVpn
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing && mandala != null) mandala.Dispose();
+            if (disposing)
+            {
+                if (lidTimer != null)
+                {
+                    lidTimer.Stop();
+                    lidTimer.Tick -= StepLid;
+                    lidTimer.Dispose();
+                }
+                if (mandala != null) mandala.Dispose();
+            }
             base.Dispose(disposing);
         }
     }
@@ -2697,8 +2972,8 @@ namespace SwissArmyVpn
             internal readonly Rectangle ServerLabel = new Rectangle(33, 326, 53, 25);
             internal readonly Rectangle Server = new Rectangle(86, 326, 211, 25);
             internal readonly Rectangle ApplyServer = new Rectangle(304, 326, 81, 25);
-            internal readonly Rectangle AnyNordVpn = new Rectangle(33, 352, 145, 22);
-            internal readonly Rectangle CurrentServer = new Rectangle(184, 352, 201, 22);
+            internal readonly Rectangle ServerMode = new Rectangle(33, 352, 168, 22);
+            internal readonly Rectangle CurrentServer = new Rectangle(208, 352, 177, 22);
             internal readonly Rectangle AlwaysOnTop = new Rectangle(33, 372, 110, 30);
             internal readonly Rectangle Monitor = new Rectangle(154, 372, 110, 30);
             internal readonly Rectangle Refresh = new Rectangle(275, 372, 110, 30);
@@ -2709,7 +2984,8 @@ namespace SwissArmyVpn
             internal readonly Rectangle Leak = new Rectangle(33, 485, 352, 19);
             internal readonly Rectangle Version = new Rectangle(33, 506, 48, 18);
             internal readonly Rectangle Update = new Rectangle(88, 506, 114, 18);
-            internal readonly Rectangle Footer = new Rectangle(216, 506, 169, 18);
+            internal readonly Rectangle GitHubMark = new Rectangle(216, 507, 16, 16);
+            internal readonly Rectangle GitHubName = new Rectangle(236, 506, 149, 18);
         }
 
         private sealed class VpnActionRequest
@@ -2757,7 +3033,7 @@ namespace SwissArmyVpn
         private readonly Button refreshButton;
         private readonly Button applyServerButton;
         private readonly ComboBox serverComboBox;
-        private readonly CheckBox allowAnyNordVpnCheck;
+        private readonly ComboBox serverModeCombo;
         private readonly Label currentServerLabel;
         private readonly LinkLabel updateLink;
         private readonly CheckBox topMostCheck;
@@ -2863,6 +3139,7 @@ namespace SwissArmyVpn
             Controls.Add(title);
 
             eyeIndicator = new EyeIndicator { Bounds = Grid.Eye };
+            if (preview != null) eyeIndicator.FreezeLid();
             Controls.Add(eyeIndicator);
             RegisterToolTip(title, "Swiss Army VPN controls.");
 
@@ -2956,16 +3233,20 @@ namespace SwissArmyVpn
             serverComboBox.Text = AppConfig.ServerHost;
             applyServerButton = NewSmallButton(
                 "APPLY", Grid.ApplyServer.Location, Grid.ApplyServer.Size, Color.FromArgb(55, 89, 144));
-            allowAnyNordVpnCheck = new CheckBox
+            serverModeCombo = new ComboBox
             {
-                Text = "Any NordVPN country",
-                Checked = ReadAllowAnyNordVpnSetting(),
-                AutoSize = false,
-                TextAlign = ContentAlignment.MiddleLeft,
-                Bounds = Grid.AnyNordVpn,
-                ForeColor = Color.FromArgb(184, 190, 201),
-                BackColor = Color.Transparent
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI", 8f),
+                Bounds = Grid.ServerMode
             };
+            serverModeCombo.Items.AddRange(new object[]
+            {
+                ServerModeLabel(ServerSelectionMode.SwissNordVpn),
+                ServerModeLabel(ServerSelectionMode.AnyNordVpn),
+                ServerModeLabel(ServerSelectionMode.BringYourOwn)
+            });
+            serverModeCombo.SelectedItem = ServerModeLabel(ReadServerSelectionMode());
             currentServerLabel = new Label
             {
                 Text = "CURRENT: " + AppConfig.ServerHost,
@@ -2973,20 +3254,23 @@ namespace SwissArmyVpn
                 ForeColor = Color.FromArgb(184, 190, 201),
                 BackColor = Color.Transparent,
                 AutoSize = false,
+                AutoEllipsis = true,
                 TextAlign = ContentAlignment.MiddleRight,
                 Bounds = Grid.CurrentServer
             };
             Controls.Add(serverLabel);
             Controls.Add(serverComboBox);
             Controls.Add(applyServerButton);
-            Controls.Add(allowAnyNordVpnCheck);
+            Controls.Add(serverModeCombo);
             Controls.Add(currentServerLabel);
-            RegisterToolTip(serverLabel, "The NordVPN server used by the Windows VPN profile and kill switch.");
-            RegisterToolTip(serverComboBox, "Choose a Swiss server or type an official NordVPN hostname.");
+            RegisterToolTip(serverLabel, "The VPN server used by the Windows VPN profile and kill switch.");
+            RegisterToolTip(
+                serverComboBox,
+                "Choose a Swiss server, type an official NordVPN hostname, or enter any IKEv2 hostname or IPv4.");
             RegisterToolTip(applyServerButton, "Validate and apply this server to the VPN profile.");
             RegisterToolTip(
-                allowAnyNordVpnCheck,
-                "Off accepts Swiss ch servers only. On accepts official numbered NordVPN servers in other countries.");
+                serverModeCombo,
+                "Swiss: ch servers only. Any NordVPN: official numbered NordVPN hosts. Bring your own: any IKEv2 hostname or IPv4.");
             RegisterToolTip(currentServerLabel, "The server currently saved in the Windows VPN profile configuration.");
 
             topMostCheck = new CheckBox
@@ -3024,7 +3308,7 @@ namespace SwissArmyVpn
                 Grid.SignIn.Size);
             signInButton.Font = new Font("Segoe UI Semibold", 8.5f);
             Controls.Add(signInButton);
-            RegisterToolTip(signInButton, "Save the VPN service sign-in.");
+            RegisterToolTip(signInButton, "Save the username and password for this VPN server.");
 
             clearCredentialsButton = NewButton(
                 "CLEAR SAVED CREDENTIALS",
@@ -3103,18 +3387,32 @@ namespace SwissArmyVpn
                 leakLabel,
                 "Direct no-proxy IP check via ipify. This app saves no IP history; it does not test DNS or browser WebRTC.");
 
-            Label footer = new Label
+            GitHubMark githubMark = new GitHubMark
             {
-                Text = "Justichuu's Swiss Army VPN",
-                ForeColor = Color.FromArgb(184, 190, 201),
+                Bounds = Grid.GitHubMark,
+                ForeColor = Color.FromArgb(184, 190, 201)
+            };
+            githubMark.Click += delegate { OpenGitHub(AppConfig.GitHubProfileUrl, "GitHub profile"); };
+            Controls.Add(githubMark);
+            RegisterToolTip(githubMark, "Justichuu on GitHub.");
+
+            LinkLabel githubName = new LinkLabel
+            {
+                Text = "Justichuu",
+                LinkColor = Color.FromArgb(184, 190, 201),
+                ActiveLinkColor = Color.White,
+                VisitedLinkColor = Color.FromArgb(184, 190, 201),
+                DisabledLinkColor = Color.FromArgb(132, 139, 151),
                 BackColor = Color.Transparent,
                 Font = new Font("Segoe UI", 7.5f),
-                TextAlign = ContentAlignment.MiddleRight,
                 AutoSize = false,
-                Bounds = Grid.Footer
+                TextAlign = ContentAlignment.MiddleLeft,
+                LinkBehavior = LinkBehavior.HoverUnderline,
+                Bounds = Grid.GitHubName
             };
-            Controls.Add(footer);
-            RegisterToolTip(footer, "Application name.");
+            githubName.LinkClicked += delegate { OpenGitHub(AppConfig.GitHubProfileUrl, "GitHub profile"); };
+            Controls.Add(githubName);
+            RegisterToolTip(githubName, "Open Justichuu on GitHub.");
 
             LinkLabel versionLink = new LinkLabel
             {
@@ -3130,9 +3428,9 @@ namespace SwissArmyVpn
                 LinkBehavior = LinkBehavior.HoverUnderline,
                 Bounds = Grid.Version
             };
-            versionLink.LinkClicked += delegate { OpenRepository(); };
+            versionLink.LinkClicked += delegate { OpenGitHub(AppConfig.RepositoryUrl, "repository"); };
             Controls.Add(versionLink);
-            RegisterToolTip(versionLink, "Open this project on GitHub.");
+            RegisterToolTip(versionLink, "Open this repository on GitHub.");
 
             updateLink = new LinkLabel
             {
@@ -3190,7 +3488,30 @@ namespace SwissArmyVpn
             trayMenu.Items.Add(traySignInItem);
             trayMenu.Items.Add(trayClearCredentialsItem);
             trayMenu.Items.Add(new ToolStripSeparator());
-            trayMenu.Items.Add(trayUpdateItem);
+            ToolStripMenuItem trayGitHub = new ToolStripMenuItem("GitHub");
+            trayGitHub.DropDownItems.Add(new ToolStripMenuItem("Justichuu", null, delegate { OpenGitHub(AppConfig.GitHubProfileUrl, "GitHub profile"); })
+            {
+                ToolTipText = "Open Justichuu's GitHub profile."
+            });
+            trayGitHub.DropDownItems.Add(new ToolStripMenuItem("This repository", null, delegate { OpenGitHub(AppConfig.RepositoryUrl, "repository"); })
+            {
+                ToolTipText = "Open the Swiss Army VPN repository."
+            });
+            trayGitHub.DropDownItems.Add(new ToolStripMenuItem("Issues", null, delegate { OpenGitHub(AppConfig.GitHubIssuesUrl, "issues"); })
+            {
+                ToolTipText = "Open GitHub issues."
+            });
+            trayGitHub.DropDownItems.Add(new ToolStripMenuItem("Releases", null, delegate { OpenGitHub(AppConfig.GitHubReleasesUrl, "releases"); })
+            {
+                ToolTipText = "Open GitHub releases."
+            });
+            trayGitHub.DropDownItems.Add(new ToolStripMenuItem("Security advisories", null, delegate { OpenGitHub(AppConfig.GitHubSecurityUrl, "security advisories"); })
+            {
+                ToolTipText = "Open GitHub security advisories. Report private problems there."
+            });
+            trayGitHub.DropDownItems.Add(new ToolStripSeparator());
+            trayGitHub.DropDownItems.Add(trayUpdateItem);
+            trayMenu.Items.Add(trayGitHub);
             trayMenu.Items.Add(new ToolStripSeparator());
             ToolStripMenuItem trayExitItem = new ToolStripMenuItem("Exit", null, delegate { Close(); })
             {
@@ -3224,9 +3545,9 @@ namespace SwissArmyVpn
             clearCredentialsButton.Click += delegate { ClearSavedCredentials(); };
             refreshButton.Click += delegate { UpdateStatus(); };
             applyServerButton.Click += delegate { BeginServerChange(); };
-            allowAnyNordVpnCheck.CheckedChanged += delegate
+            serverModeCombo.SelectedIndexChanged += delegate
             {
-                if (previewState == null) SaveAllowAnyNordVpnSetting(allowAnyNordVpnCheck.Checked);
+                if (previewState == null) SaveServerSelectionMode(SelectedServerMode());
             };
             topMostCheck.CheckedChanged += delegate { TopMost = topMostCheck.Checked; };
             monitorCheck.CheckedChanged += delegate { SetMonitoringEnabled(monitorCheck.Checked); };
@@ -3255,6 +3576,7 @@ namespace SwissArmyVpn
             Show();
             Application.DoEvents();
             UpdateStatus();
+            if (eyeIndicator != null) eyeIndicator.FreezeLid();
             Application.DoEvents();
             using (Bitmap bitmap = new Bitmap(Width, Height))
             {
@@ -3272,16 +3594,16 @@ namespace SwissArmyVpn
             toolTips.SetToolTip(control, text);
         }
 
-        private void OpenRepository()
+        private static void OpenGitHub(string url, string what)
         {
             try
             {
-                Process.Start(new ProcessStartInfo(AppConfig.RepositoryUrl) { UseShellExecute = true });
+                Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
             }
             catch (Exception ex)
             {
                 MessageBox.Show(
-                    "Could not open the GitHub repository.\r\n\r\n" + ex.Message,
+                    "Could not open the " + what + ".\r\n\r\n" + ex.Message,
                     "Swiss Army VPN",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
@@ -3801,9 +4123,9 @@ namespace SwissArmyVpn
                         : "This attempt did not change the VPN or kill switch.";
                     DialogResult answer = MessageBox.Show(
                         "Sign-in has not been set up for Swiss Army VPN.\r\n\r\n" +
-                        "Choose Yes to arm the kill switch and open SET UP SIGN-IN. Enter the NordVPN manual " +
-                        "service username and password, then connect in the Windows dialog. " +
-                        "Ask Justichuu if you need the credentials.\r\n\r\n" +
+                        "Choose Yes to arm the kill switch and open SET UP SIGN-IN. Enter the username and " +
+                        "password for this VPN server (NordVPN manual service, Proton IKEv2, corporate, or any " +
+                        "other IKEv2 login), then connect in the Windows dialog.\r\n\r\n" +
                         networkNotice,
                         "Sign-In Required",
                         MessageBoxButtons.YesNo,
@@ -3853,7 +4175,7 @@ namespace SwissArmyVpn
                 if (!RasManager.HasSavedCredentials(AppConfig.VpnName))
                 {
                     MessageBox.Show(
-                        "Sign-in has not been set up for Swiss Army VPN. Choose SET UP SIGN-IN, save the NordVPN manual service credentials, then try CONNECT ONLY again.",
+                        "Sign-in has not been set up for Swiss Army VPN. Choose SET UP SIGN-IN, save the username and password for this VPN server, then try CONNECT ONLY again.",
                         "Sign-In Required",
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Information);
@@ -3897,15 +4219,32 @@ namespace SwissArmyVpn
             });
         }
 
-        private static bool ReadAllowAnyNordVpnSetting()
+        private static string ServerModeLabel(ServerSelectionMode mode)
         {
-            try { return AppConfig.AllowAnyNordVpnServer; }
-            catch { return false; }
+            if (mode == ServerSelectionMode.BringYourOwn) return "Bring your own";
+            if (mode == ServerSelectionMode.AnyNordVpn) return "Any NordVPN";
+            return "Swiss NordVPN";
         }
 
-        private static void SaveAllowAnyNordVpnSetting(bool value)
+        private ServerSelectionMode SelectedServerMode()
         {
-            try { AppConfig.AllowAnyNordVpnServer = value; }
+            string selected = serverModeCombo.SelectedItem as string;
+            if (string.Equals(selected, ServerModeLabel(ServerSelectionMode.BringYourOwn), StringComparison.Ordinal))
+                return ServerSelectionMode.BringYourOwn;
+            if (string.Equals(selected, ServerModeLabel(ServerSelectionMode.AnyNordVpn), StringComparison.Ordinal))
+                return ServerSelectionMode.AnyNordVpn;
+            return ServerSelectionMode.SwissNordVpn;
+        }
+
+        private static ServerSelectionMode ReadServerSelectionMode()
+        {
+            try { return AppConfig.ServerMode; }
+            catch { return ServerSelectionMode.SwissNordVpn; }
+        }
+
+        private static void SaveServerSelectionMode(ServerSelectionMode value)
+        {
+            try { AppConfig.ServerMode = value; }
             catch (Exception ex)
             {
                 MessageBox.Show(ex.Message, "Swiss Army VPN", MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -3921,12 +4260,11 @@ namespace SwissArmyVpn
         {
             if (IsActionRunning || previewState != null) return;
 
+            ServerSelectionMode mode = SelectedServerMode();
             string hostname;
             try
             {
-                hostname = NetworkSafety.NormalizeServerHostname(
-                    serverComboBox.Text,
-                    allowAnyNordVpnCheck.Checked);
+                hostname = NetworkSafety.NormalizeServerHostname(serverComboBox.Text, mode);
             }
             catch (Exception ex)
             {
@@ -3935,10 +4273,13 @@ namespace SwissArmyVpn
             }
 
             if (string.Equals(hostname, AppConfig.ServerHost, StringComparison.OrdinalIgnoreCase)) return;
-            bool allowAny = allowAnyNordVpnCheck.Checked;
             if (MessageBox.Show(
                 "Change the Windows VPN profile and kill-switch server to:\r\n\r\n" + hostname +
-                "\r\n\r\nThe VPN must be disconnected and the kill switch unlocked.",
+                "\r\n\r\nThe VPN must be disconnected and the kill switch unlocked." +
+                (mode == ServerSelectionMode.BringYourOwn
+                    ? "\r\n\r\nBring your own uses Windows IKEv2 with the username and password from SET UP SIGN-IN. " +
+                      "WireGuard and OpenVPN clients are not driven by this widget."
+                    : string.Empty),
                 "Apply VPN Server?",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Question,
@@ -3949,11 +4290,11 @@ namespace SwissArmyVpn
             {
                 Operation = VpnOperation.ChangeServer,
                 SuccessMessage = "VPN server changed to " + hostname + ".",
-                Execute = delegate { RunServerSwitcher(hostname, allowAny); }
+                Execute = delegate { RunServerSwitcher(hostname, mode); }
             });
         }
 
-        private static void RunServerSwitcher(string hostname, bool allowAnyNordVpnServer)
+        private static void RunServerSwitcher(string hostname, ServerSelectionMode mode)
         {
             string scriptPath = Path.Combine(
                 AppDomain.CurrentDomain.BaseDirectory,
@@ -3963,8 +4304,11 @@ namespace SwissArmyVpn
                     "The server-switch helper is missing. Reinstall Swiss Army VPN before changing servers.");
 
             string arguments = "-NoProfile -ExecutionPolicy Bypass -File \"" + scriptPath +
-                "\" -Server \"" + hostname + "\"" +
-                (allowAnyNordVpnServer ? " -AllowAnyNordVpn" : string.Empty);
+                "\" -Server \"" + hostname + "\"";
+            if (mode == ServerSelectionMode.BringYourOwn)
+                arguments += " -BringYourOwn";
+            else if (mode == ServerSelectionMode.AnyNordVpn)
+                arguments += " -AllowAnyNordVpn";
             Process process;
             try
             {
@@ -4615,7 +4959,7 @@ namespace SwissArmyVpn
             clearCredentialsButton.Enabled = !IsActionRunning;
             refreshButton.Enabled = !IsActionRunning;
             serverComboBox.Enabled = !IsActionRunning && previewState == null;
-            allowAnyNordVpnCheck.Enabled = !IsActionRunning && previewState == null;
+            serverModeCombo.Enabled = !IsActionRunning && previewState == null;
             SetButtonAvailability(
                 applyServerButton,
                 !IsActionRunning && previewState == null,
@@ -5707,14 +6051,8 @@ namespace SwissArmyVpn
         }
 
         /// <summary>
-        /// Maps each explicit display state to one complete set of widget and tray text, preventing
-        /// contradictory labels from being assembled from independent booleans.
-        /// </summary>
-        /// <summary>
-        /// The eye is shut only when nothing can observe this machine's traffic: either it is
-        /// inside the tunnel with the kill switch armed, or the kill switch is blocking everything.
-        /// Anything unproven leaves the eye open, matching the rule that a missing answer is never
-        /// treated as safety.
+        /// The eye is shut only when nothing can observe this machine's traffic.
+        /// Wait screens stay open: unproven is never treated as hidden.
         /// </summary>
         private static EyeVerdict GetEyeVerdict(WidgetDisplayState displayState)
         {
@@ -5724,6 +6062,13 @@ namespace SwissArmyVpn
                 case WidgetDisplayState.InternetBlocked:
                     return EyeVerdict.Hidden;
                 case WidgetDisplayState.Disconnected:
+                case WidgetDisplayState.Connecting:
+                case WidgetDisplayState.ConnectingOnly:
+                case WidgetDisplayState.ArmingOnly:
+                case WidgetDisplayState.PreparingSignIn:
+                case WidgetDisplayState.Disconnecting:
+                case WidgetDisplayState.DisconnectingOnly:
+                case WidgetDisplayState.UnlockingOnly:
                 case WidgetDisplayState.ConnectedWithoutProtection:
                 case WidgetDisplayState.ProtectionIncomplete:
                 case WidgetDisplayState.FirewallProtectionOff:
@@ -6126,8 +6471,6 @@ namespace SwissArmyVpn
                 case "connecting": return new WidgetState { PreviewDisplayState = WidgetDisplayState.Connecting };
                 case "protected": return new WidgetState { Connected = true, KillSwitchActive = true };
                 case "working": return CreateWorkingPreview(24, 84.6, 18.2);
-                case "working2": return CreateWorkingPreview(22, 86.1, 17.9);
-                case "working3": return CreateWorkingPreview(25, 83.8, 18.4);
                 case "unprotected": return new WidgetState { Connected = true };
                 case "blocked": return new WidgetState { KillSwitchActive = true };
                 case "incomplete": return new WidgetState { KillSwitchIncomplete = true };
@@ -6137,7 +6480,6 @@ namespace SwissArmyVpn
                     ManagedRulesPresent = true,
                     KillSwitchIncomplete = true
                 };
-                case "firewalloff-empty": return new WidgetState { FirewallProtectionOff = true };
                 case "error": return new WidgetState { Error = "Windows could not read the VPN or firewall status." };
                 default: throw new ArgumentException("Unknown preview state: " + name);
             }

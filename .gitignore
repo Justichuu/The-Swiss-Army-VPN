@@ -22,3 +22,5 @@ work/
 outputs/
 SwissArmyVPN.cpu-probe.cs
 SwissArmyVPN.monitor-probe.cs
+__pycache__/
+*.pyc

@@ -1,0 +1,7 @@
+services:
+  book:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    read_only: true
+    network_mode: none
