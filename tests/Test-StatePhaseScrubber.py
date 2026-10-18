@@ -22,8 +22,8 @@ github_pat_abcdefghijklmnopqrstuvwxyz123456
 MIIEogIBAAKCAQEA7example
 -----END RSA PRIVATE KEY-----
 jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0In0.signaturepad
-path=C:\\Users\\Justichuu\\AppData\\Roaming\\secret.txt
-home=/home/justichuu/.ssh/id_rsa
+path=C:\\Users\\Example\\AppData\\Roaming\\secret.txt
+home=/home/example/.ssh/id_rsa
 mail=person@example.com
 host=203.0.113.10
 I am an AI assistant writing this note.
@@ -52,8 +52,8 @@ def main() -> int:
             "github_pat_abcdefghijklmnopqrstuvwxyz123456",
             "BEGIN RSA PRIVATE KEY",
             "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9",
-            "C:\\Users\\Justichuu",
-            "/home/justichuu",
+            "C:\\Users\\Example",
+            "/home/example",
             "person@example.com",
             "203.0.113.10",
             "I am an AI",
